@@ -1,6 +1,7 @@
 package stableset
 
 import (
+	"runtime"
 	"testing"
 )
 
@@ -202,3 +203,28 @@ func BenchmarkLargeScale_StdMap_HighLoad(b *testing.B) {
 		_ = m[keys[(uintptr(i)*1337)%(capacity/2)]]
 	}
 }
+
+func BenchmarkMemoryUsage_StableSet(b *testing.B) {
+	var m1, m2 runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&m1)
+
+	ss := New[uint64](16777216)
+	_ = ss
+
+	runtime.ReadMemStats(&m2)
+	b.Logf("Actual Memory: %v MB\n", (m2.Alloc-m1.Alloc)/1024/1024)
+}
+
+func BenchmarkMemoryUsage_StdMap(b *testing.B) {
+	var m1, m2 runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&m1)
+
+	ss := make(map[uint64]struct{}, 16777216)
+	_ = ss
+
+	runtime.ReadMemStats(&m2)
+	b.Logf("Actual Memory: %v MB\n", (m2.Alloc-m1.Alloc)/1024/1024)
+}
+
