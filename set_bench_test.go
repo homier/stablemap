@@ -76,6 +76,54 @@ func BenchmarkStdMap_Put(b *testing.B) {
 	}
 }
 
+func BenchmarkStableSet_Delete(b *testing.B) {
+	const size = 1000
+	ss := New[int](size)
+	for i := range size {
+		ss.Put(i)
+	}
+
+	for i := 0; b.Loop(); i++ {
+		ss.Delete(i % size)
+	}
+}
+
+func BenchmarkStdMap_Delete(b *testing.B) {
+	const size = 1000
+	m := make(map[int]struct{}, size)
+	for i := range size {
+		m[i] = struct{}{}
+	}
+
+	for i := 0; b.Loop(); i++ {
+		delete(m, i%size)
+	}
+}
+
+func BenchmarkLargeScale_StableSet_Delete(b *testing.B) {
+	const capacity = 1 << 20
+	ss := New[int](capacity)
+	for i := range capacity / 2 {
+		ss.Put(i)
+	}
+
+	for i := 0; b.Loop(); i++ {
+		ss.Delete(i % (capacity / 2))
+	}
+}
+
+func BenchmarkLargeScale_StdMap_Delete(b *testing.B) {
+	const capacity = 1 << 20
+	m := make(map[int]struct{}, capacity)
+	for i := range capacity / 2 {
+		m[i] = struct{}{}
+	}
+
+	for i := 0; b.Loop(); i++ {
+		delete(m, i%(capacity/2))
+	}
+}
+
 func BenchmarkLargeScale_StableSet(b *testing.B) {
 	const capacity = 4194304 // 2^22
 	// Pre-generate keys to avoid hashing/gen time in the loop
@@ -98,6 +146,49 @@ func BenchmarkLargeScale_StableSet(b *testing.B) {
 func BenchmarkLargeScale_StdMap(b *testing.B) {
 	const capacity = 4194304
 	keys := make([]uint64, capacity/2)
+	for i := range keys {
+		keys[i] = uint64(i * 9876543210123)
+	}
+
+	m := make(map[uint64]struct{}, capacity)
+	for _, k := range keys {
+		m[k] = struct{}{}
+	}
+
+	for i := 0; b.Loop(); i++ {
+		_ = m[keys[(uintptr(i)*1337)%(capacity/2)]]
+	}
+}
+
+func BenchmarkLargeScale_StableSet_HighLoad(b *testing.B) {
+	const capacity = 4194304
+	// 0.875 is 7/8 load—the theoretical limit for many Swiss Tables
+	const loadFactor = 0.875
+	fillCount := int(float64(capacity) * loadFactor)
+
+	keys := make([]uint64, fillCount)
+	for i := range keys {
+		keys[i] = uint64(i * 9876543210123)
+	}
+
+	ss := New[uint64](capacity)
+	for _, k := range keys {
+		ss.Put(k)
+	}
+
+	for i := 0; b.Loop(); i++ {
+		// Use a subset of the keys to ensure we are hitting existing values
+		_ = ss.Has(keys[i%len(keys)])
+	}
+}
+
+func BenchmarkLargeScale_StdMap_HighLoad(b *testing.B) {
+	const capacity = 4194304
+	// 0.875 is 7/8 load—the theoretical limit for many Swiss Tables
+	const loadFactor = 0.875
+	fillCount := int(float64(capacity) * loadFactor)
+
+	keys := make([]uint64, fillCount)
 	for i := range keys {
 		keys[i] = uint64(i * 9876543210123)
 	}

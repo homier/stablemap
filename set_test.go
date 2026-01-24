@@ -10,9 +10,8 @@ import (
 func Test_New(t *testing.T) {
 	ss := New[uint64](4096)
 
-	require.Len(t, ss.ctrls, 4096+groupSize)
-	require.Len(t, ss.slots, 4096)
-	require.Equal(t, uintptr(4095), ss.capacityMask)
+	require.Len(t, ss.groups, 4096/groupSize)
+	require.Equal(t, uintptr((4096/groupSize)-1), ss.numGroupsMask)
 }
 
 func TestStableSet_EffectiveCapacity(t *testing.T) {
@@ -97,20 +96,25 @@ func TestStableSet_RehashInPlace(t *testing.T) {
 	require.Truef(t, ss.Has(lastIdx), "Lost key %d after rehash: %b", lastIdx)
 
 	// 5. Verify no tombstones (0xFE) remain in the ctrls
-	for i, c := range ss.ctrls {
-		require.NotEqualf(t, slotDeleted, c, "Found tombstone at index %d after rehash", i)
+	for i := range ss.groups {
+		for j := range groupSize {
+			require.NotEqualf(t, slotDeleted, ss.groups[i].ctrls[j], "Found tombstone at index %d after rehash", i)
+		}
 	}
 }
 
 func TestStableSet_BoundaryMirror(t *testing.T) {
+	// 16 slots / 8 per group = 2 groups
 	ss := New[int](16)
 
-	// Force a key to sit at the very last index (capacity - 1)
-	// We'll try to find a key whose hash points to the end.
+	// The last valid group index is ss.numGroupsMask (which is 1)
+	targetGroupIdx := ss.numGroupsMask
+
 	lastIdxKey := 0
 	for {
 		h1, _ := HashSplit(ss.hashFunc(lastIdxKey))
-		if (h1 & ss.capacityMask) == 15 {
+		// h1/8 gives the group index. Mask it to find keys landing in the last group.
+		if (h1 / 8 & ss.numGroupsMask) == targetGroupIdx {
 			break
 		}
 		lastIdxKey++

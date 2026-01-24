@@ -1,7 +1,6 @@
 package stableset
 
 import (
-	"errors"
 	"unsafe"
 )
 
@@ -15,6 +14,17 @@ const (
 	bitsetMSB = 0x8080808080808080
 )
 
+type group[K comparable] struct {
+	// 8 bytes of metadata (h2 or control states)
+	// This fits perfectly in a single uint64 load
+	ctrls [groupSize]uint8
+
+	// 8 keys stored immediately after the metadata
+	// In a 64-bit system, this group is (8 + 8*8) = 72 bytes.
+	// That's just slightly over one 64-byte cache line.
+	slots [groupSize]K
+}
+
 // StableSet is a set-like data structure, which uses swiss-tables under the hood.
 // It's stable, because it's designed to never grow up - it retains the capacity
 // it was initialized with. This is especially helpful for a large sets in memory.
@@ -23,17 +33,10 @@ const (
 // Since we're going to use swiss table rehashing, it's not safe to iter over the set,
 // and the iteration API is not provided.
 type StableSet[K comparable] struct {
-	// TODO: On a large set, we probably need buckets
-
-	// ctrl holds the metadata (1 byte per slot)
-	// We pad this by 8 or 16 bytes so SIMD/SWAR
-	// always has a full group to read at the end.
-	ctrls []uint8
-	// slots holds the actual keys.
-	slots []K
+	groups []group[K]
 
 	capacity          uintptr
-	capacityMask      uintptr
+	numGroupsMask     uintptr
 	capacityEffective uintptr
 	size              uintptr
 
@@ -44,14 +47,14 @@ type Option[K comparable] func(ss *StableSet[K])
 
 func New[K comparable](capacity int, opts ...Option[K]) *StableSet[K] {
 	normalizedCapacity := uintptr(NextPowerOf2(uint32(capacity)))
-	capacityMask := uintptr(normalizedCapacity - 1)
+	// Number of groups required
+	numGroups := normalizedCapacity / groupSize
+	numGroupsMask := uintptr(numGroups - 1)
 
 	ss := &StableSet[K]{
-		// we add groupSize for slice size for padding during SIMD/SWAR
-		ctrls:             make([]uint8, normalizedCapacity+groupSize),
-		slots:             make([]K, normalizedCapacity),
+		groups:            make([]group[K], numGroups),
 		capacity:          normalizedCapacity,
-		capacityMask:      capacityMask,
+		numGroupsMask:     numGroupsMask,
 		capacityEffective: normalizedCapacity * 7 / 8,
 	}
 
@@ -63,9 +66,11 @@ func New[K comparable](capacity int, opts ...Option[K]) *StableSet[K] {
 		ss.hashFunc = MakeDefaultHashFunc[K]()
 	}
 
-	ss.ctrls[0] = slotEmpty
-	for i := 1; i < len(ss.ctrls); i *= 2 {
-		copy(ss.ctrls[i:], ss.ctrls[:i])
+	// Initialize all control bytes to Empty
+	for i := range ss.groups {
+		for j := range ss.groups[i].ctrls {
+			ss.groups[i].ctrls[j] = slotEmpty
+		}
 	}
 
 	return ss
@@ -83,34 +88,33 @@ func (ss *StableSet[K]) EffectiveCapacity() int {
 }
 
 func (ss *StableSet[K]) Has(key K) bool {
-	ctrls := ss.ctrls
-	slots := ss.slots
-	mask := ss.capacityMask
-
 	h1, h2 := HashSplit(ss.hashFunc(key))
-	offset := h1 & mask
+	mask := ss.numGroupsMask
+	start := (h1 / groupSize) & mask
 
-	for probe := uintptr(0); ; {
-		group := *(*uint64)(unsafe.Pointer(&ctrls[offset]))
-		matchMask := ss.matchH2(group, h2)
-		for matchMask != 0 {
-			idx := matchMask.first()
-			if slots[(offset+idx)&mask] == key {
+	for p, offset := uintptr(0), start; p <= mask; p++ {
+		g := &ss.groups[offset]
+		ctrl := *(*uint64)(unsafe.Pointer(&g.ctrls))
+
+		// SIMD-like match
+		matches := ss.matchH2(ctrl, h2)
+		for matches != 0 {
+			if g.slots[matches.first()] == key {
 				return true
 			}
-			matchMask = matchMask.removeFirst()
+			matches = matches.removeFirst()
 		}
 
-		if ss.matchEmpty(group) != 0 {
+		// Termination
+		if ss.matchEmpty(ctrl) != 0 {
 			return false
 		}
 
-		probe++
-		offset = (offset + probe*groupSize) & mask
-		if probe >= uintptr(ss.capacity)/groupSize {
-			return false
-		}
+		// Quadratic probe math
+		offset = (start + (p+1)*(p+2)/2) & mask
 	}
+
+	return false
 }
 
 // Puts a key in the set.
@@ -121,73 +125,75 @@ func (ss *StableSet[K]) Put(key K) (bool, bool) {
 	}
 
 	var (
-		h      = ss.hashFunc(key)
-		h1, h2 = HashSplit(h)
-		offset = h1 & ss.capacityMask
+		h1, h2 = HashSplit(ss.hashFunc(key))
+		mask   = ss.numGroupsMask
+		start  = (h1 / groupSize) & mask
 
-		slotAvailable    bool
-		slotAvailableIdx uintptr
+		targetGroup *group[K]
+		targetSlot  uintptr
+		foundSlot   bool
 	)
 
-	for probe := uintptr(0); ; {
-		group := *(*uint64)(unsafe.Pointer(&ss.ctrls[offset]))
-		matchMask := ss.matchH2(group, h2)
+	for p, offset := uintptr(0), start; p <= mask; p++ {
+		g := &ss.groups[offset]
+		ctrl := *(*uint64)(unsafe.Pointer(&g.ctrls))
+
+		// 1. Existing check
+		matchMask := ss.matchH2(ctrl, h2)
 		for matchMask != 0 {
-			idx := matchMask.first()
-			if ss.slots[(offset+idx)&ss.capacityMask] == key {
+			if g.slots[matchMask.first()] == key {
 				return false, false
 			}
 
 			matchMask = matchMask.removeFirst()
 		}
 
-		if !slotAvailable {
-			matchMask = ss.matchEmptyOrDeleted(group)
+		// 2. Cache first available slot
+		if !foundSlot {
+			matchMask = ss.matchEmptyOrDeleted(ctrl)
 			if matchMask != 0 {
-				slotAvailable = true
-				slotAvailableIdx = (offset + matchMask.first()) & ss.capacityMask
+				targetGroup = g
+				targetSlot = matchMask.first()
+				foundSlot = true
 			}
 		}
 
-		if ss.matchEmpty(group) != 0 {
-			break
+		// 3. Termination condition
+		matchMask = ss.matchEmpty(ctrl)
+		if matchMask != 0 {
+			if foundSlot {
+				targetGroup.ctrls[targetSlot] = h2
+				targetGroup.slots[targetSlot] = key
+				ss.size++
+
+				return true, false
+			}
+
+			return false, true
 		}
 
-		probe++
-		offset = (offset + probe*groupSize) & ss.capacityMask
+		offset = (start + (p+1)*(p+2)/2) & mask
 	}
 
-	if slotAvailable {
-		ss.ctrls[slotAvailableIdx] = h2
-		ss.slots[slotAvailableIdx] = key
-		ss.size++
-
-		if slotAvailableIdx < groupSize {
-			ss.ctrls[uintptr(ss.capacity)+slotAvailableIdx] = h2
-		}
-
-		return true, false
-	}
-
-	// Needs rehashing
 	return false, true
 }
 
 func (ss *StableSet[K]) Delete(key K) bool {
 	h1, h2 := HashSplit(ss.hashFunc(key))
-	offset := h1 & ss.capacityMask
+	mask := ss.numGroupsMask
+	start := (h1 / groupSize) & mask
 
-	for probe := uintptr(0); ; {
-		group := *(*uint64)(unsafe.Pointer(&ss.ctrls[offset]))
+	for p, offset := uintptr(0), start; p <= mask; p++ {
+		g := &ss.groups[offset]
+		ctrl := *(*uint64)(unsafe.Pointer(&g.ctrls))
+
 		// 1. Check current group for the key
-		matchMask := ss.matchH2(group, h2)
+		matchMask := ss.matchH2(ctrl, h2)
 		for matchMask != 0 {
 			idx := matchMask.first()
-			slotIdx := (offset + idx) & ss.capacityMask
-
-			if ss.slots[slotIdx] == key {
+			if g.slots[idx] == key {
 				// Mark as Deleted (0xFE) to preserve the probe chain
-				ss.setCtrl(slotIdx, slotDeleted)
+				g.ctrls[idx] = slotDeleted
 				ss.size--
 
 				return true
@@ -196,29 +202,21 @@ func (ss *StableSet[K]) Delete(key K) bool {
 			matchMask = matchMask.removeFirst()
 		}
 
-		// 2. Stop searching ONLY if we hit a truly Empty slot
-		if ss.matchEmpty(group) != 0 {
-			break
+		if ss.matchEmpty(ctrl) != 0 {
+			return false
 		}
 
-		// 3. Keep probing
-		probe++
-		offset = (offset + probe*groupSize) & ss.capacityMask
-
-		// Safety check to prevent infinite loop in a 100% full table
-		if probe >= uintptr(ss.capacity)/groupSize {
-			break
-		}
+		offset = (start + (p+1)*(p+2)/2) & mask
 	}
 
 	return false
 }
 
 func (ss *StableSet[K]) Reset() {
-	// Only the control bytes need to be reset to 'Empty'
-	// to make the set logically empty.
-	for i := range ss.ctrls {
-		ss.ctrls[i] = slotEmpty
+	for i := range ss.groups {
+		for j := range groupSize {
+			ss.groups[i].ctrls[j] = slotEmpty
+		}
 	}
 
 	ss.size = 0
@@ -232,91 +230,73 @@ func (ss *StableSet[K]) Rehash() error {
 	// slots as DELETED gives us a marker to locate the previously FULL slots.
 
 	// Mark all DELETED slots as EMPTY and all FULL slots as DELETED.
-	for idx := uintptr(0); idx < uintptr(len(ss.ctrls)); idx++ {
-		c := ss.ctrls[idx]
-		if c < 0x80 {
-			ss.setCtrl(idx, slotDeleted)
-		} else if c == slotDeleted {
-			ss.setCtrl(idx, slotEmpty)
+	for i := range ss.groups {
+		g := &ss.groups[i]
+		for j := range groupSize {
+			c := g.ctrls[j]
+			if c < 0x80 {
+				g.ctrls[j] = slotDeleted
+			} else if c == slotDeleted {
+				g.ctrls[j] = slotEmpty
+			}
 		}
 	}
 
-	for idx := uintptr(0); idx < ss.capacity; idx++ {
-		// Only process slots we marked as Deleted (which were originally Full)
-		if ss.ctrls[idx] != slotDeleted {
-			continue
-		}
-
-		key := ss.slots[idx]
-		h := ss.hashFunc(key)
-		h1, h2 := HashSplit(h)
-
-		// Logic: Where should this key go?
-		desiredOffset := h1 & ss.capacityMask
-
-		// Find the best available slot starting from its ideal position
-		var (
-			targetIdx uintptr
-			found     bool
-		)
-
-		// We use a simplified probe sequence here
-		probeIdx := desiredOffset
-		for step := uintptr(0); ; step++ {
-			// In a rehash, we only care about finding the first Empty or Deleted slot
-			// matchEmptyOrDeleted detects both 0x80 and 0xFE
-			group := *(*uint64)(unsafe.Pointer(&ss.ctrls[probeIdx]))
-			mask := ss.matchEmptyOrDeleted(group)
-			if mask != 0 {
-				targetIdx = (probeIdx + mask.first()) & ss.capacityMask
-				found = true
-				break
+	for idx := 0; idx < len(ss.groups); idx++ {
+		g := &ss.groups[idx]
+		for j := uintptr(0); j < groupSize; j++ {
+			// Only process slots we marked as Deleted (which were originally Full)
+			if g.ctrls[j] != slotDeleted {
+				continue
 			}
 
-			probeIdx = (probeIdx + (step+1)*groupSize) & ss.capacityMask
-		}
+			var (
+				key          = g.slots[j]
+				h            = ss.hashFunc(key)
+				h1, h2       = HashSplit(h)
+				destGroupIdx = (h1 / groupSize) & ss.numGroupsMask
 
-		if !found {
-			return errors.New("no empty slots found, cannot rehash")
-		}
+				targetGroup *group[K]
+				targetSlot  uintptr
 
-		switch {
-		case idx == targetIdx:
-			// 1. Element is already in its best possible position.
-			// Just restore its real h2.
-			ss.setCtrl(idx, h2)
+				p        = uintptr(0)
+				currGIdx = destGroupIdx
+			)
 
-		case ss.ctrls[targetIdx] == slotEmpty:
-			// 2. We found an empty spot. Move the key there and leave a hole behind.
-			ss.setCtrl(targetIdx, h2)
-			ss.slots[targetIdx] = key
-			ss.setCtrl(idx, slotEmpty)
+			for {
+				tg := &ss.groups[currGIdx]
+				tc := *(*uint64)(unsafe.Pointer(&tg.ctrls))
+				m := ss.matchEmptyOrDeleted(tc)
+				if m != 0 {
+					targetGroup = tg
+					targetSlot = m.first()
+					break
+				}
+				p++
+				currGIdx = (currGIdx + p) & ss.numGroupsMask
+			}
 
-		case ss.ctrls[targetIdx] == slotDeleted:
-			// 3. THE SWAP: The target is currently holding ANOTHER key that
-			// hasn't been re-inserted yet.
-			// We swap them, put the current key in its place, and re-process
-			// the new key now sitting at index 'i'.
-			ss.setCtrl(targetIdx, h2)
-			ss.slots[idx], ss.slots[targetIdx] = ss.slots[targetIdx], ss.slots[idx]
-
-			// Stay at current index 'i' to process the swapped key in the next iteration
-			idx--
-
-		default:
-			return errors.New("rehash: invalid control state")
+			// Swap / Move logic
+			if targetGroup == g && targetSlot == j {
+				g.ctrls[j] = h2
+			} else if targetGroup.ctrls[targetSlot] == slotEmpty {
+				targetGroup.ctrls[targetSlot] = h2
+				targetGroup.slots[targetSlot] = key
+				g.ctrls[j] = slotEmpty
+			} else {
+				// SWAP: targetG.ctrls[targetSlot] is slotDeleted
+				// 1. Move our current key to its new home
+				// 2. Take the key that was there and put it in our current slot
+				// 3. Keep our current slot marked as slotDeleted so it gets processed next
+				g.slots[j] = targetGroup.slots[targetSlot]
+				targetGroup.slots[targetSlot] = key
+				targetGroup.ctrls[targetSlot] = h2
+				j-- // Repeat for swapped key
+			}
 		}
 	}
 
 	return nil
-}
-
-// setCtrl ensures mirroring is maintained during rehash
-func (ss *StableSet[K]) setCtrl(i uintptr, val uint8) {
-	ss.ctrls[i] = val
-	if i < groupSize {
-		ss.ctrls[uintptr(ss.capacity)+i] = val
-	}
 }
 
 func (ss *StableSet[K]) matchH2(group uint64, h2 uint8) bitset {
