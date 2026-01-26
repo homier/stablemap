@@ -187,6 +187,55 @@ func (t *table[K, V]) put(key K, value V) (bool, bool) {
 	return false, true
 }
 
+func (t *table[K, V]) insertNoGuard(key K, value V) {
+	var (
+		h1, h2 = HashSplit(t.hashFunc(key))
+		mask   = t.numGroupsMask
+		start  = (h1 / groupSize) & mask
+
+		targetGroup *group[K, V]
+		targetSlot  uintptr
+		foundSlot   bool
+
+		matchMask bitset
+	)
+
+	for p, offset := uintptr(0), start; p <= mask; p++ {
+		g := &t.groups[offset]
+		ctrl := *(*uint64)(unsafe.Pointer(&g.ctrls))
+
+		// 2. Cache first available slot
+		if !foundSlot {
+			matchMask = matchEmptyOrDeleted(ctrl)
+			if matchMask != 0 {
+				targetGroup = g
+				targetSlot = matchMask.first()
+				foundSlot = true
+			}
+		}
+
+		// 3. Termination condition
+		matchMask = matchEmpty(ctrl)
+		if matchMask != 0 {
+			break
+		}
+
+		offset = (start + (p+1)*(p+2)/2) & mask
+	}
+
+	if foundSlot {
+		targetGroup.ctrls[targetSlot] = h2
+		targetGroup.slots[targetSlot] = key
+		targetGroup.values[targetSlot] = value
+		t.size++
+
+		return
+
+	}
+
+	panic("expected a free slot for the new item")
+}
+
 func (t *table[K, V]) delete(key K) bool {
 	h1, h2 := HashSplit(t.hashFunc(key))
 	mask := t.numGroupsMask
@@ -259,6 +308,7 @@ func (t *table[K, V]) Compact() error {
 
 			var (
 				key          = g.slots[j]
+				value        = g.values[j]
 				h            = t.hashFunc(key)
 				h1, h2       = HashSplit(h)
 				destGroupIdx = (h1 / groupSize) & t.numGroupsMask
@@ -284,21 +334,25 @@ func (t *table[K, V]) Compact() error {
 			}
 
 			// Swap / Move logic
+			// Swapping within the same group
 			if targetGroup == g && targetSlot == j {
 				g.ctrls[j] = h2
 			} else if targetGroup.ctrls[targetSlot] == slotEmpty {
+				// Target group slot is empty
 				targetGroup.ctrls[targetSlot] = h2
 				targetGroup.slots[targetSlot] = key
+				targetGroup.values[targetSlot] = value
 				g.ctrls[j] = slotEmpty
 			} else {
 				// SWAP: targetG.ctrls[targetSlot] is slotDeleted
-				// 1. Move our current key to its new home
-				// 2. Take the key that was there and put it in our current slot
-				// 3. Keep our current slot marked as slotDeleted so it gets processed next
-				g.slots[j] = targetGroup.slots[targetSlot]
-				targetGroup.slots[targetSlot] = key
 				targetGroup.ctrls[targetSlot] = h2
-				j-- // Repeat for swapped key
+
+				// SWAP: Swapping values and keys as well
+				g.slots[j], targetGroup.slots[targetSlot] = targetGroup.slots[targetSlot], g.slots[j]
+				g.values[j], targetGroup.values[targetSlot] = targetGroup.values[targetSlot], g.values[j]
+
+				// Repeat for swapped key
+				j--
 			}
 		}
 	}

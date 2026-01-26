@@ -23,6 +23,7 @@ func (sm *StableMap[K, V]) Get(key K) (V, bool) {
 }
 
 // Puts a key in the set.
+// Returns whether a key is new and if compaction is required to be done first.
 func (sm *StableMap[K, V]) Put(key K, value V) (bool, bool) {
 	return sm.put(key, value)
 }
