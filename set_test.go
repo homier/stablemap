@@ -53,7 +53,7 @@ func TestStableSet_Tombstones(t *testing.T) {
 		return 0 // All keys start at index 0
 	}
 
-	ss := New(16, WithHashFunc(collisionHash))
+	ss := New(16, WithHashFunc[string, struct{}](collisionHash))
 
 	ok, r := ss.Put("A") // Slot 0
 	require.True(t, ok)
