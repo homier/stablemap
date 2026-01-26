@@ -1,8 +1,6 @@
 package stableset
 
-import (
-	"unsafe"
-)
+import "unsafe"
 
 const (
 	groupSize = 8
@@ -97,7 +95,7 @@ func (ss *StableSet[K]) Has(key K) bool {
 		ctrl := *(*uint64)(unsafe.Pointer(&g.ctrls))
 
 		// SIMD-like match
-		matches := ss.matchH2(ctrl, h2)
+		matches := matchH2(ctrl, h2)
 		for matches != 0 {
 			if g.slots[matches.first()] == key {
 				return true
@@ -106,7 +104,7 @@ func (ss *StableSet[K]) Has(key K) bool {
 		}
 
 		// Termination
-		if ss.matchEmpty(ctrl) != 0 {
+		if matchEmpty(ctrl) != 0 {
 			return false
 		}
 
@@ -139,7 +137,7 @@ func (ss *StableSet[K]) Put(key K) (bool, bool) {
 		ctrl := *(*uint64)(unsafe.Pointer(&g.ctrls))
 
 		// 1. Existing check
-		matchMask := ss.matchH2(ctrl, h2)
+		matchMask := matchH2(ctrl, h2)
 		for matchMask != 0 {
 			if g.slots[matchMask.first()] == key {
 				return false, false
@@ -150,7 +148,7 @@ func (ss *StableSet[K]) Put(key K) (bool, bool) {
 
 		// 2. Cache first available slot
 		if !foundSlot {
-			matchMask = ss.matchEmptyOrDeleted(ctrl)
+			matchMask = matchEmptyOrDeleted(ctrl)
 			if matchMask != 0 {
 				targetGroup = g
 				targetSlot = matchMask.first()
@@ -159,7 +157,7 @@ func (ss *StableSet[K]) Put(key K) (bool, bool) {
 		}
 
 		// 3. Termination condition
-		matchMask = ss.matchEmpty(ctrl)
+		matchMask = matchEmpty(ctrl)
 		if matchMask != 0 {
 			if foundSlot {
 				targetGroup.ctrls[targetSlot] = h2
@@ -188,7 +186,7 @@ func (ss *StableSet[K]) Delete(key K) bool {
 		ctrl := *(*uint64)(unsafe.Pointer(&g.ctrls))
 
 		// 1. Check current group for the key
-		matchMask := ss.matchH2(ctrl, h2)
+		matchMask := matchH2(ctrl, h2)
 		for matchMask != 0 {
 			idx := matchMask.first()
 			if g.slots[idx] == key {
@@ -202,7 +200,7 @@ func (ss *StableSet[K]) Delete(key K) bool {
 			matchMask = matchMask.removeFirst()
 		}
 
-		if ss.matchEmpty(ctrl) != 0 {
+		if matchEmpty(ctrl) != 0 {
 			return false
 		}
 
@@ -222,7 +220,7 @@ func (ss *StableSet[K]) Reset() {
 	ss.size = 0
 }
 
-func (ss *StableSet[K]) Rehash() error {
+func (ss *StableSet[K]) Compact() error {
 	// We want to drop all of the deletes in place. We first walk over the
 	// control bytes and mark every DELETED slot as EMPTY and every FULL slot
 	// as DELETED. Marking the DELETED slots as EMPTY has effectively dropped
@@ -266,7 +264,7 @@ func (ss *StableSet[K]) Rehash() error {
 			for {
 				tg := &ss.groups[currGIdx]
 				tc := *(*uint64)(unsafe.Pointer(&tg.ctrls))
-				m := ss.matchEmptyOrDeleted(tc)
+				m := matchEmptyOrDeleted(tc)
 				if m != 0 {
 					targetGroup = tg
 					targetSlot = m.first()
@@ -297,21 +295,4 @@ func (ss *StableSet[K]) Rehash() error {
 	}
 
 	return nil
-}
-
-func (ss *StableSet[K]) matchH2(group uint64, h2 uint8) bitset {
-	v := group ^ (bitsetLSB * uint64(h2))
-	return bitset(((v - bitsetLSB) &^ v) & bitsetMSB)
-}
-
-// matchEmpty: Check if MSB is 1 AND bit 1 is 0.
-// (0x80 is 10000000, bit 1 is 0. 0xFE is 11111110, bit 1 is 1)
-func (ss *StableSet[K]) matchEmpty(group uint64) bitset {
-	return bitset((group &^ (group << 6)) & bitsetMSB)
-}
-
-// matchEmptyOrDeleted: Just check if the MSB is 1.
-// (Both 0x80 and 0xFE have it, Full slots don't)
-func (ss *StableSet[K]) matchEmptyOrDeleted(group uint64) bitset {
-	return bitset(group & bitsetMSB)
 }

@@ -89,7 +89,7 @@ func TestStableSet_RehashInPlace(t *testing.T) {
 	}
 
 	// 3. Rehash
-	require.NoError(t, ss.Rehash())
+	require.NoError(t, ss.Compact())
 
 	// 4. Verify the one remaining element
 	lastIdx := ss.EffectiveCapacity() - 1
