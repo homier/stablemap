@@ -26,6 +26,7 @@ func (b bitset) removeFirst() bitset {
 	return b & ^(bitset(slotEmpty) << (bits.TrailingZeros64(uint64(b)) & ^7))
 }
 
+//go:inline
 func matchH2(group uint64, h2 uint8) bitset {
 	v := group ^ (bitsetLSB * uint64(h2))
 	return bitset(((v - bitsetLSB) &^ v) & bitsetMSB)
@@ -33,12 +34,16 @@ func matchH2(group uint64, h2 uint8) bitset {
 
 // matchEmpty: Check if MSB is 1 AND bit 1 is 0.
 // (0x80 is 10000000, bit 1 is 0. 0xFE is 11111110, bit 1 is 1)
+//
+//go:inline
 func matchEmpty(group uint64) bitset {
 	return bitset((group &^ (group << 6)) & bitsetMSB)
 }
 
 // matchEmptyOrDeleted: Just check if the MSB is 1.
 // (Both 0x80 and 0xFE have it, Full slots don't)
+//
+//go:inline
 func matchEmptyOrDeleted(group uint64) bitset {
 	return bitset(group & bitsetMSB)
 }

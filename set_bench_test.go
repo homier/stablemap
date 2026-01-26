@@ -3,6 +3,7 @@ package stableset
 import (
 	"runtime"
 	"testing"
+	"unsafe"
 )
 
 // Generate some data for testing
@@ -206,6 +207,15 @@ func BenchmarkLargeScale_StdMap_HighLoad(b *testing.B) {
 
 func BenchmarkMemoryUsage_StableSet(b *testing.B) {
 	var m1, m2 runtime.MemStats
+
+	g := group[uint64, struct{}]{}
+	for idx := range groupSize {
+		g.ctrls[idx] = 0x7b
+		g.slots[idx] = uint64(idx)
+	}
+
+	b.Logf("size of table: %v B\n", unsafe.Sizeof(g))
+
 	runtime.GC()
 	runtime.ReadMemStats(&m1)
 
