@@ -87,6 +87,24 @@ func TestTable_put_Tombstones(t *testing.T) {
 	require.Equal(t, "lol", v)
 }
 
+func TestTable_set(t *testing.T) {
+	tt := newTable[string, string](16)
+
+	compact := tt.set("foo", "foo")
+	assert.False(t, compact)
+
+	v, ok := tt.get("foo")
+	require.True(t, ok)
+	require.Equal(t, "foo", v)
+
+	compact = tt.set("foo", "bar")
+	assert.False(t, compact)
+
+	v, ok = tt.get("foo")
+	require.True(t, ok)
+	require.Equal(t, "bar", v)
+}
+
 func TestTable_Compact(t *testing.T) {
 	const capacity = 32
 	tt := newTable[int, int](capacity)
@@ -187,20 +205,4 @@ func TestTable_put_BoundaryMirror(t *testing.T) {
 	v, ok := tt.get(lastIdxKey)
 	require.True(t, ok, "Failed to find key at the boundary of the capacity")
 	require.Equal(t, lastIdxKey, v)
-}
-
-func TestTable_insertNoGuard(t *testing.T) {
-	tt := newTable(16, WithHashFunc[int, int](func(i int) uint64 {
-		return 0
-	}))
-
-	for idx := range 16 {
-		require.NotPanics(t, func() {
-			tt.insertNoGuard(idx, idx)
-		})
-	}
-
-	require.Panics(t, func() {
-		tt.insertNoGuard(tt.EffectiveCapacity()+1, tt.EffectiveCapacity()+1)
-	})
 }

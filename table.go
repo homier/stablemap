@@ -1,6 +1,9 @@
 package stableset
 
-import "unsafe"
+import (
+	"hash/maphash"
+	"unsafe"
+)
 
 const (
 	groupSize = 8
@@ -86,7 +89,7 @@ func (t *table[K, V]) init(capacity int, opts ...Option[K, V]) {
 	}
 
 	if t.hashFunc == nil {
-		t.hashFunc = MakeDefaultHashFunc[K]()
+		t.hashFunc = MakeDefaultHashFunc[K](maphash.MakeSeed())
 	}
 }
 
@@ -187,7 +190,12 @@ func (t *table[K, V]) put(key K, value V) (bool, bool) {
 	return false, true
 }
 
-func (t *table[K, V]) insertNoGuard(key K, value V) {
+func (t *table[K, V]) set(key K, value V) bool {
+	// We reached the 87.5% of the capacity, table needs rehashing.
+	if t.size >= t.capacityEffective {
+		return true
+	}
+
 	var (
 		h1, h2 = HashSplit(t.hashFunc(key))
 		mask   = t.numGroupsMask
@@ -196,13 +204,23 @@ func (t *table[K, V]) insertNoGuard(key K, value V) {
 		targetGroup *group[K, V]
 		targetSlot  uintptr
 		foundSlot   bool
-
-		matchMask bitset
 	)
 
 	for p, offset := uintptr(0), start; p <= mask; p++ {
 		g := &t.groups[offset]
 		ctrl := *(*uint64)(unsafe.Pointer(&g.ctrls))
+
+		// 1. Existing check
+		matchMask := matchH2(ctrl, h2)
+		for matchMask != 0 {
+			idx := matchMask.first()
+			if g.slots[idx] == key {
+				g.values[idx] = value
+				return false
+			}
+
+			matchMask = matchMask.removeFirst()
+		}
 
 		// 2. Cache first available slot
 		if !foundSlot {
@@ -217,23 +235,23 @@ func (t *table[K, V]) insertNoGuard(key K, value V) {
 		// 3. Termination condition
 		matchMask = matchEmpty(ctrl)
 		if matchMask != 0 {
-			break
+			if foundSlot {
+				targetGroup.ctrls[targetSlot] = h2
+				targetGroup.slots[targetSlot] = key
+				targetGroup.values[targetSlot] = value
+				t.size++
+
+				return false
+			}
+
+			return true
 		}
 
 		offset = (start + (p+1)*(p+2)/2) & mask
 	}
 
-	if foundSlot {
-		targetGroup.ctrls[targetSlot] = h2
-		targetGroup.slots[targetSlot] = key
-		targetGroup.values[targetSlot] = value
-		t.size++
+	return true
 
-		return
-
-	}
-
-	panic("expected a free slot for the new item")
 }
 
 func (t *table[K, V]) delete(key K) bool {

@@ -17,15 +17,22 @@ func NewMap[K comparable, V any](capacity int, opts ...Option[K, V]) *StableMap[
 	return &sm
 }
 
-// Checks whether a key is in the set.
+// Checks whether a key is in the map.
 func (sm *StableMap[K, V]) Get(key K) (V, bool) {
 	return sm.get(key)
 }
 
-// Puts a key in the set.
+// Puts a key in the map.
 // Returns whether a key is new and if compaction is required to be done first.
 func (sm *StableMap[K, V]) Put(key K, value V) (bool, bool) {
 	return sm.put(key, value)
+}
+
+// Sets a key in the map.
+// If the key is already present, overwrites it.
+// Returns whether a compaction is required first.
+func (sm *StableMap[K, V]) Set(key K, value V) bool {
+	return sm.set(key, value)
 }
 
 // Delets a key from the set.
