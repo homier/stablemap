@@ -122,7 +122,7 @@ func TestTable_Compact(t *testing.T) {
 	}
 
 	// 3. Compact
-	require.NoError(t, tt.Compact())
+	tt.Compact()
 
 	// 4. Verify the one remaining element
 	lastIdx := tt.EffectiveCapacity() - 1
@@ -160,7 +160,7 @@ func TestTable_Compact_Sync(t *testing.T) {
 	}
 
 	// 3. Compact in-place
-	require.NoError(t, tt.Compact())
+	tt.Compact()
 
 	// 4. Verify remaining keys still have their correct values
 	for idx := range 10 {

@@ -6,33 +6,9 @@ import (
 )
 
 const (
-	groupSize = 8
-
 	slotEmpty   = 0x80
 	slotDeleted = 0xFE
-
-	bitsetLSB = 0x0101010101010101
-	bitsetMSB = 0x8080808080808080
 )
-
-type group[K comparable, V any] struct {
-	// 8 bytes of metadata (h2 or control states)
-	// This fits perfectly in a single uint64 load
-	ctrls [groupSize]uint8
-
-	// 8 keys stored immediately after the metadata
-	// In a 64-bit system, this group is (8 + 8*8) = 72 bytes.
-	// That's just slightly over one 64-byte cache line.
-	slots [groupSize]K
-
-	// 8 values stored after the keys.
-	// Even If V is a struct{} type, Go compiler will add padding.
-	// It's very sensible, you need to be careful with the value type.
-	// If it's too large, you'll end up missing CPU cache lines.
-	// If it's too low, Go will add padding and you'll end up wasting
-	// memory for nothing.
-	values [groupSize]V
-}
 
 var (
 	emptyCtrls = [groupSize]uint8{
@@ -55,6 +31,7 @@ type table[K comparable, V any] struct {
 	numGroupsMask     uintptr
 	capacityEffective uintptr
 	size              uintptr
+	tombstones        uintptr
 
 	hashFunc HashFunc[K]
 
@@ -179,6 +156,10 @@ func (t *table[K, V]) put(key K, value V) (bool, bool) {
 	}
 
 	if foundSlot {
+		if targetGroup.ctrls[targetSlot] == slotDeleted {
+			t.tombstones--
+		}
+
 		targetGroup.ctrls[targetSlot] = h2
 		targetGroup.slots[targetSlot] = key
 		targetGroup.values[targetSlot] = value
@@ -242,6 +223,10 @@ func (t *table[K, V]) set(key K, value V) bool {
 	}
 
 	if foundSlot {
+		if targetGroup.ctrls[targetSlot] == slotDeleted {
+			t.tombstones--
+		}
+
 		targetGroup.ctrls[targetSlot] = h2
 		targetGroup.slots[targetSlot] = key
 		targetGroup.values[targetSlot] = value
@@ -271,6 +256,7 @@ func (t *table[K, V]) delete(key K) bool {
 				// Mark as Deleted (0xFE) to preserve the probe chain
 				g.ctrls[idx] = slotDeleted
 				t.size--
+				t.tombstones++
 
 				return true
 			}
@@ -294,9 +280,10 @@ func (t *table[K, V]) Reset() {
 	}
 
 	t.size = 0
+	t.tombstones = 0
 }
 
-func (t *table[K, V]) Compact() error {
+func (t *table[K, V]) Compact() {
 	// We want to drop all of the deletes in place. We first walk over the
 	// control bytes and mark every DELETED slot as EMPTY and every FULL slot
 	// as DELETED. Marking the DELETED slots as EMPTY has effectively dropped
@@ -376,5 +363,5 @@ func (t *table[K, V]) Compact() error {
 		}
 	}
 
-	return nil
+	t.tombstones = 0
 }

@@ -4,6 +4,11 @@ import (
 	"math/bits"
 )
 
+const (
+	bitsetLSB = 0x0101010101010101
+	bitsetMSB = 0x8080808080808080
+)
+
 // bitset represents a set of slots within a group.
 //
 // The underlying representation uses one byte per slot, where each byte is
