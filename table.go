@@ -1,4 +1,4 @@
-package stableset
+package stablemap
 
 import (
 	"hash/maphash"
@@ -26,7 +26,7 @@ type group[K comparable, V any] struct {
 	slots [groupSize]K
 
 	// 8 values stored after the keys.
-	// If V is a struct{} type, Go compiler will optimize it to 0 bytes.
+	// Even If V is a struct{} type, Go compiler will add padding.
 	// It's very sensible, you need to be careful with the value type.
 	// If it's too large, you'll end up missing CPU cache lines.
 	// If it's too low, Go will add padding and you'll end up wasting
@@ -172,19 +172,19 @@ func (t *table[K, V]) put(key K, value V) (bool, bool) {
 		// 3. Termination condition
 		matchMask = matchEmpty(ctrl)
 		if matchMask != 0 {
-			if foundSlot {
-				targetGroup.ctrls[targetSlot] = h2
-				targetGroup.slots[targetSlot] = key
-				targetGroup.values[targetSlot] = value
-				t.size++
-
-				return true, false
-			}
-
-			return false, true
+			break
 		}
 
 		offset = (start + (p+1)*(p+2)/2) & mask
+	}
+
+	if foundSlot {
+		targetGroup.ctrls[targetSlot] = h2
+		targetGroup.slots[targetSlot] = key
+		targetGroup.values[targetSlot] = value
+		t.size++
+
+		return true, false
 	}
 
 	return false, true
@@ -235,19 +235,19 @@ func (t *table[K, V]) set(key K, value V) bool {
 		// 3. Termination condition
 		matchMask = matchEmpty(ctrl)
 		if matchMask != 0 {
-			if foundSlot {
-				targetGroup.ctrls[targetSlot] = h2
-				targetGroup.slots[targetSlot] = key
-				targetGroup.values[targetSlot] = value
-				t.size++
-
-				return false
-			}
-
-			return true
+			break
 		}
 
 		offset = (start + (p+1)*(p+2)/2) & mask
+	}
+
+	if foundSlot {
+		targetGroup.ctrls[targetSlot] = h2
+		targetGroup.slots[targetSlot] = key
+		targetGroup.values[targetSlot] = value
+		t.size++
+
+		return false
 	}
 
 	return true
@@ -304,6 +304,7 @@ func (t *table[K, V]) Compact() error {
 	// slots as DELETED gives us a marker to locate the previously FULL slots.
 
 	// Mark all DELETED slots as EMPTY and all FULL slots as DELETED.
+	// TODO: Use bitwise operations for inverting ctrls
 	for i := range t.groups {
 		g := &t.groups[i]
 		for j := range groupSize {

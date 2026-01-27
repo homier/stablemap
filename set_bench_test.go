@@ -1,4 +1,4 @@
-package stableset
+package stablemap
 
 import (
 	"runtime"
@@ -18,7 +18,7 @@ func setupBenchData(n int) []uint64 {
 func BenchmarkStableSet_Contains(b *testing.B) {
 	const capacity = 8192
 	keys := setupBenchData(capacity / 2)
-	ss := New[uint64](capacity)
+	ss := NewSet[uint64](capacity)
 	for _, k := range keys {
 		ss.Put(k)
 	}
@@ -46,7 +46,7 @@ func BenchmarkStdMap_Contains(b *testing.B) {
 func BenchmarkStableSet_Put(b *testing.B) {
 	const capacity = 8192
 	keys := setupBenchData(capacity)
-	ss := New[uint64](capacity)
+	ss := NewSet[uint64](capacity)
 
 	for i := 0; b.Loop(); i++ {
 		// Reset when nearly full to measure steady-state Put
@@ -80,7 +80,7 @@ func BenchmarkStdMap_Put(b *testing.B) {
 
 func BenchmarkStableSet_Delete(b *testing.B) {
 	const size = 1000
-	ss := New[int](size)
+	ss := NewSet[int](size)
 	for i := range size {
 		ss.Put(i)
 	}
@@ -104,7 +104,7 @@ func BenchmarkStdMap_Delete(b *testing.B) {
 
 func BenchmarkLargeScale_StableSet_Delete(b *testing.B) {
 	const capacity = 1 << 20
-	ss := New[int](capacity)
+	ss := NewSet[int](capacity)
 	for i := range capacity / 2 {
 		ss.Put(i)
 	}
@@ -134,7 +134,7 @@ func BenchmarkLargeScale_StableSet(b *testing.B) {
 		keys[i] = uint64(i * 9876543210123) // High entropy distribution
 	}
 
-	ss := New[uint64](capacity)
+	ss := NewSet[uint64](capacity)
 	for _, k := range keys {
 		ss.Put(k)
 	}
@@ -173,7 +173,7 @@ func BenchmarkLargeScale_StableSet_HighLoad(b *testing.B) {
 		keys[i] = uint64(i * 9876543210123)
 	}
 
-	ss := New[uint64](capacity)
+	ss := NewSet[uint64](capacity)
 	for _, k := range keys {
 		ss.Put(k)
 	}
@@ -219,7 +219,7 @@ func BenchmarkMemoryUsage_StableSet(b *testing.B) {
 	runtime.GC()
 	runtime.ReadMemStats(&m1)
 
-	ss := New[uint64](16777216)
+	ss := NewSet[uint64](16777216)
 	_ = ss
 
 	runtime.ReadMemStats(&m2)
@@ -237,4 +237,3 @@ func BenchmarkMemoryUsage_StdMap(b *testing.B) {
 	runtime.ReadMemStats(&m2)
 	b.Logf("Actual Memory: %v MB\n", (m2.Alloc-m1.Alloc)/1024/1024)
 }
-

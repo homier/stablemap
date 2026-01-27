@@ -1,4 +1,4 @@
-package stableset
+package stablemap
 
 import (
 	"hash/maphash"

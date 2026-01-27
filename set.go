@@ -1,4 +1,4 @@
-package stableset
+package stablemap
 
 // StableSet is a set-like data structure, which uses swiss-tables under the hood.
 // It's stable, because it's designed to never grow up - it retains the capacity
@@ -12,7 +12,7 @@ type StableSet[K comparable] struct {
 }
 
 // Returns a new instance of the stable set.
-func New[K comparable](capacity int, opts ...Option[K, struct{}]) *StableSet[K] {
+func NewSet[K comparable](capacity int, opts ...Option[K, struct{}]) *StableSet[K] {
 	var ss StableSet[K]
 	ss.init(capacity, opts...)
 

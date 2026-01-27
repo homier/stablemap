@@ -1,4 +1,4 @@
-module github.com/homier/stableset
+module github.com/homier/stablemap
 
 go 1.25.6
 

@@ -1,4 +1,4 @@
-package stableset
+package stablemap
 
 // StableMap is a map-like data structure, which uses swiss-tables under the hood.
 // It's stable, because it's designed to never grow up - it retains the capacity
@@ -10,7 +10,7 @@ type StableMap[K comparable, V any] struct {
 }
 
 // Returns a new instance of the stable map.
-func NewMap[K comparable, V any](capacity int, opts ...Option[K, V]) *StableMap[K, V] {
+func New[K comparable, V any](capacity int, opts ...Option[K, V]) *StableMap[K, V] {
 	var sm StableMap[K, V]
 	sm.init(capacity, opts...)
 

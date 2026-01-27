@@ -1,8 +1,8 @@
-# stableset
-Go (S)wiss (T)able Set
+# stablemap
+Go (S)wiss (T)able Map
 
 ## Intro
-StableSet is a high-performance, contiguous-memory hash set for Go, inspired by the Swiss Table (Abseil) design. It is engineered for scenarios requiring ultra-low latency, zero heap allocations during operation, and mechanical sympathy for modern CPU caches.
+StableMap is a high-performance, contiguous-memory hash map for Go, inspired by the Swiss Table (Abseil) design. It is engineered for scenarios requiring ultra-low latency, zero heap allocations during operation, and mechanical sympathy for modern CPU caches.
 
 By leveraging SWAR (SIMD-within-a-register) techniques and a group-based metadata layout, StableSet achieves lookup and insertion speeds that rival the Go standard map, while maintaining a significantly smaller garbage collection (GC) footprint.
 
@@ -14,10 +14,11 @@ It is designed with a **fixed-size memory model**. It does not grow automaticall
 * Go internal map
 
 ## Key features
-* **Zero allocation hot path**: after initial initialization, `Put`, `Has` and `Delete` methods do not allocate additional memory.
+* **Zero allocation hot path**: after initial initialization, `Set`, `Put`, `Has` and `Delete` methods do not allocate additional memory.
 * **In-place rehash**: rehashing happens in-place to remove tombstones without additional allocations or doubling memory.
 * **Contiguous memory**: data stored in a single slice of groups.
 * **Custom hash function**: you can provide your own hash function instead of default `hash/maphash`.
+* **Set-like variant**: use `StableSet` for set-like datastructure instead of `StableMap`.
 
 ## Implementation details
 StableSet uses Swiss table design, organizing data into groups of 8 slots. Each group contains a 64-bit control word (8 bytes of metadata) and 8 data slots.
@@ -27,16 +28,64 @@ StableSet uses Swiss table design, organizing data into groups of 8 slots. Each 
 4. Tombstones: Uses a special `0xFE` marker for deleted slots to maintain the probe invariant without moving keys immediately.
 
 ## Usage
+### StableMap
 ```go
-import "github.com/homier/stableset"
+import "github.com/homier/stablemap"
 
 // Initialize with a capacity hint
-ss := stableset.New[int](1024)
+sm := stablemap.New[int, string](1024)
 
 // Add elements
-ok, rehashRequired := ss.Put(42)
-if rehashRequired {
-    ss.Rehash()
+needCompaction := sm.Set(42, "foo")
+if needCompaction {
+    ss.Compact()
+}
+
+// Check existence
+v, ok := sm.Has(42)
+if ok {
+    fmt.Println("Found it: ", v)
+}
+
+ok, needCompaction = sm.Put(42, "bar")
+if !ok {
+    fmt.Println("Can't put a value, key exists")
+}
+
+if needCompaction {
+    sm.Compact()
+}
+
+needCompaction = sm.Set(42, "bar")
+if needCompaction {
+    sm.Compact()
+}
+
+v, ok := sm.Has(42)
+if ok {
+    fmt.Println("Found it! Now it should be `bar`: ", v)
+}
+
+if sm.Delete(42) {
+    fmt.Println("Deleted it")
+}
+
+if !sm.Has(42) {
+    fmt.Println("Do not exist anymore!")
+}
+```
+
+### StableSet
+```go
+import "github.com/homier/stablemap"
+
+// Initialize with a capacity hint
+ss := stablemap.NewSet[int](1024)
+
+// Add elements
+ok, needCompaction := ss.Put(42)
+if needCompaction {
+    ss.Compact()
 }
 
 // Check existence
@@ -48,10 +97,14 @@ if ss.Has(42) {
 if ss.Delete(42) {
     fmt.Println("Deleted it")
 }
+
+if !ss.Has(42) {
+    fmt.Println("Do not exist anymore!")
+}
 ```
 
-## When to use StableSet
-Use Go map first. But, while the standard Go map is the right choice for most cases, StableSet excels when:
+## When to use StableMap
+Use Go map first. But, while the standard Go map is the right choice for most cases, StableMap excels when:
 1. You are handling large datasets (GBs of data) where GC scan times for standard maps become a bottleneck.
 2. You need predictable memory usage and want to avoid the "latency spikes" caused by map growth/evacuation.
 3. You have a high-churn workload (constant Puts/Deletes) and want to manage tombstone cleanup manually via Rehash().
