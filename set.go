@@ -7,6 +7,9 @@ package stablemap
 // store values, only keys.
 // Since we're going to use swiss table rehashing, it's not safe to iter over the set,
 // and the iteration API is not provided.
+//
+// StableSet is NOT safe for concurrent use. If multiple goroutines access a StableSet
+// concurrently, and at least one of them modifies it, external synchronization is required.
 type StableSet[K comparable] struct {
 	table[K, struct{}]
 }

@@ -5,6 +5,9 @@ package stablemap
 // it was initialized with. This is especially helpful for a large sets in memory.
 // Since we're going to use swiss table rehashing, it's not safe to iter over the set,
 // and the iteration API is not provided.
+//
+// StableMap is NOT safe for concurrent use. If multiple goroutines access a StableMap
+// concurrently, and at least one of them modifies it, external synchronization is required.
 type StableMap[K comparable, V any] struct {
 	table[K, V]
 }

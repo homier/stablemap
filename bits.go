@@ -20,8 +20,7 @@ type bitset uint64
 // is the result of matchEmpty or similar) and returns the relative index of the
 // first control byte in the group that has the MSB set.
 //
-// Returns 8 if the bitset is 0.
-// Returns groupSize if the bitset is empty.
+// Returns groupSize (8) if the bitset is empty.
 func (b bitset) first() uintptr {
 	return uintptr(bits.TrailingZeros64(uint64(b)) >> 3)
 }

@@ -375,7 +375,9 @@ func (t *table[K, V]) Compact() {
 				g.slots[j], targetGroup.slots[targetSlot] = targetGroup.slots[targetSlot], g.slots[j]
 				g.values[j], targetGroup.values[targetSlot] = targetGroup.values[targetSlot], g.values[j]
 
-				// Repeat for swapped key
+				// Decrement to re-process this slot with the swapped-in key.
+				// When j=0, underflow to MaxUintptr is intentional: the loop's
+				// j++ wraps it back to 0, correctly re-processing slot 0.
 				j--
 			}
 		}
