@@ -35,7 +35,7 @@ func (ss *StableSet[K]) Put(key K) (bool, error) {
 	return ss.put(key, struct{}{})
 }
 
-// Delets a key from the set.
+// Deletes a key from the set.
 func (ss *StableSet[K]) Delete(key K) bool {
 	return ss.delete(key)
 }

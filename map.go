@@ -32,7 +32,7 @@ func (sm *StableMap[K, V]) Set(key K, value V) error {
 	return sm.set(key, value)
 }
 
-// Delets a key from the set.
+// Deletes a key from the map.
 func (sm *StableMap[K, V]) Delete(key K) bool {
 	return sm.delete(key)
 }
