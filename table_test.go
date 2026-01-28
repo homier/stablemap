@@ -106,6 +106,45 @@ func TestTable_set(t *testing.T) {
 	require.Equal(t, "bar", v)
 }
 
+func TestTable_set_FullTable(t *testing.T) {
+	tt := newTable[int, int](16)
+	capacity := tt.Stats().EffectiveCapacity
+
+	// Fill the table to effective capacity
+	for i := range capacity {
+		err := tt.set(i, i*10)
+		require.NoError(t, err)
+	}
+
+	require.Equal(t, capacity, tt.Stats().Size)
+
+	t.Run("update existing key at full capacity", func(t *testing.T) {
+		// Updating an existing key should succeed even when table is full
+		err := tt.set(0, 999)
+		require.NoError(t, err)
+
+		v, ok := tt.get(0)
+		require.True(t, ok)
+		require.Equal(t, 999, v)
+
+		// Size should remain unchanged
+		require.Equal(t, capacity, tt.Stats().Size)
+	})
+
+	t.Run("insert new key at full capacity", func(t *testing.T) {
+		// Inserting a new key should fail with ErrTableFull
+		err := tt.set(capacity+100, 123)
+		require.ErrorIs(t, err, ErrTableFull)
+
+		// Key should not exist
+		_, ok := tt.get(capacity + 100)
+		require.False(t, ok)
+
+		// Size should remain unchanged
+		require.Equal(t, capacity, tt.Stats().Size)
+	})
+}
+
 func TestTable_Compact(t *testing.T) {
 	tt := newTable[int, int](32)
 	capacity := tt.Stats().EffectiveCapacity

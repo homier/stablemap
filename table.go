@@ -198,11 +198,6 @@ func (t *table[K, V]) put(key K, value V) (bool, error) {
 }
 
 func (t *table[K, V]) set(key K, value V) error {
-	// We reached the 87.5% of the capacity, table needs rehashing.
-	if t.size >= t.capacityEffective {
-		return ErrTableFull
-	}
-
 	var (
 		h1, h2 = HashSplit(t.hashFunc(key))
 		mask   = t.numGroupsMask
@@ -217,7 +212,7 @@ func (t *table[K, V]) set(key K, value V) error {
 		g := &t.groups[offset]
 		ctrl := *(*uint64)(unsafe.Pointer(&g.ctrls))
 
-		// 1. Existing check
+		// 1. Existing check - updates are always allowed, even at capacity
 		matchMask := matchH2(ctrl, h2)
 		for matchMask != 0 {
 			idx := matchMask.first()
@@ -246,6 +241,11 @@ func (t *table[K, V]) set(key K, value V) error {
 		}
 
 		offset = (start + (p+1)*(p+2)/2) & mask
+	}
+
+	// Inserting a new key - check capacity
+	if t.size >= t.capacityEffective {
+		return ErrTableFull
 	}
 
 	if foundSlot {
