@@ -20,6 +20,9 @@ It is designed with a **fixed-size memory model**. It does not grow automaticall
 * **Custom hash function**: you can provide your own hash function instead of default `hash/maphash`.
 * **Set-like variant**: use `StableSet` for set-like datastructure instead of `StableMap`.
 
+## Limitations
+* **Avoid pointer types for keys and values**: Deleted and compacted entries do not clear their key/value slots, which means references to heap objects may be retained longer than expected. For maximum efficiency and to avoid potential memory leaks, use value types (integers, structs without pointers, fixed-size arrays) rather than pointers, slices, maps, or strings.
+
 ## Implementation details
 StableSet uses Swiss table design, organizing data into groups of 8 slots. Each group contains a 64-bit control word (8 bytes of metadata) and 8 data slots.
 1. H1 Hashing: Determines the starting group index.
