@@ -84,8 +84,8 @@ func (t *table[K, V]) init(capacity int, opts ...Option[K, V]) {
 
 func (t *table[K, V]) Stats() Stats {
 	var tombstonesCapacityRatio, tombstonesSizeRatio float32
-	if t.capacity > 0 {
-		tombstonesCapacityRatio = float32(t.tombstones) / float32(t.capacity)
+	if t.capacityEffective > 0 {
+		tombstonesCapacityRatio = float32(t.tombstones) / float32(t.capacityEffective)
 	}
 	if t.size > 0 {
 		tombstonesSizeRatio = float32(t.tombstones) / float32(t.size)

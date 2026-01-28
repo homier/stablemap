@@ -260,8 +260,8 @@ func TestTable_put_BoundaryMirror(t *testing.T) {
 }
 
 func TestTable_Stats(t *testing.T) {
-	const capacity = 32
-	tt := newTable[int, int](capacity)
+	tt := newTable[int, int](32)
+	effectiveCapacity := tt.Stats().EffectiveCapacity
 
 	// 1. Empty table
 	stats := tt.Stats()
@@ -291,7 +291,7 @@ func TestTable_Stats(t *testing.T) {
 	stats = tt.Stats()
 	assert.Equal(t, 5, stats.Size)
 	assert.Equal(t, 5, stats.Tombstones)
-	assert.Equal(t, float32(5)/float32(capacity), stats.TombstonesCapacityRatio)
+	assert.Equal(t, float32(5)/float32(effectiveCapacity), stats.TombstonesCapacityRatio)
 	assert.Equal(t, float32(5)/float32(5), stats.TombstonesSizeRatio)
 
 	// 4. After compaction - tombstones should be cleared
