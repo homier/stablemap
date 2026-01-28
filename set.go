@@ -27,7 +27,8 @@ func (ss *StableSet[K]) Has(key K) bool {
 }
 
 // Puts a key in the set.
-func (ss *StableSet[K]) Put(key K) (bool, bool) {
+// Returns whether a key is new and an error if compaction is required.
+func (ss *StableSet[K]) Put(key K) (bool, error) {
 	return ss.put(key, struct{}{})
 }
 

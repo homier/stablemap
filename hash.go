@@ -4,7 +4,6 @@ import "hash/maphash"
 
 type HashFunc[K comparable] func(K) uint64
 
-// TODO: Use different hash functions
 func MakeDefaultHashFunc[K comparable](seed maphash.Seed) HashFunc[K] {
 	return func(k K) uint64 {
 		return maphash.Comparable(seed, k)
