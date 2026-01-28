@@ -1,239 +1,293 @@
 package stablemap
 
 import (
-	"runtime"
+	"strconv"
 	"testing"
-	"unsafe"
 )
 
-// Generate some data for testing
-func setupBenchData(n int) []uint64 {
-	data := make([]uint64, n)
-	for i := range n {
-		data[i] = uint64(i * 1234567) // Distributed keys
-	}
-	return data
+var sizes = []int{
+	// 6,
+	// 8192,
+	// 1 << 16,
+	// 1 << 20,
+	1 << 22,
+	1 << 26,
 }
 
-func BenchmarkStableSet_Contains(b *testing.B) {
-	const capacity = 8192
-	keys := setupBenchData(capacity / 2)
-	ss := NewSet[uint64](capacity)
-	for _, k := range keys {
-		ss.Put(k)
-	}
+func BenchmarkSetHas_Miss(b *testing.B) {
+	b.Run("variant=stdSet", func(b *testing.B) {
+		// b.Run("K=string", benchSimulateLoadSet(benchmarkStdSetHasMiss[string], genKeys[string]))
+		// b.Run("K=uint32", benchSimulateLoadSet(benchmarkStdSetHasMiss[uint32], genKeys[uint32]))
+		b.Run("K=uint64", benchSimulateLoadSet(benchmarkStdSetHasMiss[uint64], genKeys[uint64]))
+	})
 
-	for i := 0; b.Loop(); i++ {
-		// We use bitwise AND to stay within the slice range
-		// and test both hits and misses
-		ss.Has(uint64(i))
-	}
+	b.Run("variant=stableSet", func(b *testing.B) {
+		// b.Run("K=string", benchSimulateLoadSet(benchmarkStableSetHasMiss[string], genKeys[string]))
+		// b.Run("K=uint32", benchSimulateLoadSet(benchmarkStableSetHasMiss[uint32], genKeys[uint32]))
+		b.Run("K=uint64", benchSimulateLoadSet(benchmarkStableSetHasMiss[uint64], genKeys[uint64]))
+	})
 }
 
-func BenchmarkStdMap_Contains(b *testing.B) {
-	const capacity = 8192
-	keys := setupBenchData(capacity / 2)
-	m := make(map[uint64]struct{}, capacity)
-	for _, k := range keys {
-		m[k] = struct{}{}
-	}
+func BenchmarkSetHas_Hit(b *testing.B) {
+	b.Run("variant=stdSet", func(b *testing.B) {
+		// b.Run("K=string", benchSimulateLoadSet(benchmarkStdSetHasHit[string], genKeys[string]))
+		// b.Run("K=uint32", benchSimulateLoadSet(benchmarkStdSetHasHit[uint32], genKeys[uint32]))
+		b.Run("K=uint64", benchSimulateLoadSet(benchmarkStdSetHasHit[uint64], genKeys[uint64]))
+	})
 
-	for i := 0; b.Loop(); i++ {
-		_ = m[uint64(i)]
-	}
+	b.Run("variant=stableSet", func(b *testing.B) {
+		// b.Run("K=string", benchSimulateLoadSet(benchmarkStableSetHasHit[string], genKeys[string]))
+		// b.Run("K=uint32", benchSimulateLoadSet(benchmarkStableSetHasHit[uint32], genKeys[uint32]))
+		b.Run("K=uint64", benchSimulateLoadSet(benchmarkStableSetHasHit[uint64], genKeys[uint64]))
+	})
 }
 
-func BenchmarkStableSet_Put(b *testing.B) {
-	const capacity = 8192
-	keys := setupBenchData(capacity)
-	ss := NewSet[uint64](capacity)
+// TODO: Need to fix bench
+//
+//	func BenchmarkSetPut_Miss(b *testing.B) {
+//		b.Run("variant=stdSet", func(b *testing.B) {
+//			b.Run("K=string", benchSimulateLoadSet(benchmarkStdSetPutMiss[string], genKeys[string]))
+//			b.Run("K=uint32", benchSimulateLoadSet(benchmarkStdSetPutMiss[uint32], genKeys[uint32]))
+//			b.Run("K=uint64", benchSimulateLoadSet(benchmarkStdSetPutMiss[uint64], genKeys[uint64]))
+//		})
+//
+//		b.Run("variant=stableSet", func(b *testing.B) {
+//			b.Run("K=string", benchSimulateLoadSet(benchmarkStableSetPutMiss[string], genKeys[string]))
+//			b.Run("K=uint32", benchSimulateLoadSet(benchmarkStableSetPutMiss[uint32], genKeys[uint32]))
+//			b.Run("K=uint64", benchSimulateLoadSet(benchmarkStableSetPutMiss[uint64], genKeys[uint64]))
+//		})
+//	}
 
-	for i := 0; b.Loop(); i++ {
-		// Reset when nearly full to measure steady-state Put
-		if ss.size >= ss.capacityEffective {
-			b.StopTimer()
-			ss.Reset()
-			b.StartTimer()
-		}
-		ss.Put(keys[i%len(keys)])
-	}
-}
+// func BenchmarkSetPut_Hit(b *testing.B) {
+// 	b.Run("variant=stdSet", func(b *testing.B) {
+// 		b.Run("K=string", benchSimulateLoadSet(benchmarkStdSetPutHit[string], genKeys[string]))
+// 		b.Run("K=uint32", benchSimulateLoadSet(benchmarkStdSetPutHit[uint32], genKeys[uint32]))
+// 		b.Run("K=uint64", benchSimulateLoadSet(benchmarkStdSetPutHit[uint64], genKeys[uint64]))
+// 	})
+//
+// 	b.Run("variant=stableSet", func(b *testing.B) {
+// 		b.Run("K=string", benchSimulateLoadSet(benchmarkStableSetPutHit[string], genKeys[string]))
+// 		b.Run("K=uint32", benchSimulateLoadSet(benchmarkStableSetPutHit[uint32], genKeys[uint32]))
+// 		b.Run("K=uint64", benchSimulateLoadSet(benchmarkStableSetPutHit[uint64], genKeys[uint64]))
+// 	})
+// }
 
-func BenchmarkStdMap_Put(b *testing.B) {
-	const capacity = 8192
-	keys := setupBenchData(capacity)
-	// We initialize with capacity to prevent resizing during the benchmark
-	m := make(map[uint64]struct{}, capacity)
+//	func BenchmarkSetDelete_Miss(b *testing.B) {
+//		b.Run("variant=stdSet", func(b *testing.B) {
+//			b.Run("K=string", benchSimulateLoadSet(benchmarkStdSetDeleteMiss[string], genKeys[string]))
+//			b.Run("K=uint32", benchSimulateLoadSet(benchmarkStdSetDeleteMiss[uint32], genKeys[uint32]))
+//			b.Run("K=uint64", benchSimulateLoadSet(benchmarkStdSetDeleteMiss[uint64], genKeys[uint64]))
+//		})
+//
+//		b.Run("variant=stableSet", func(b *testing.B) {
+//			b.Run("K=string", benchSimulateLoadSet(benchmarkStableSetDeleteMiss[string], genKeys[string]))
+//			b.Run("K=uint32", benchSimulateLoadSet(benchmarkStableSetDeleteMiss[uint32], genKeys[uint32]))
+//			b.Run("K=uint64", benchSimulateLoadSet(benchmarkStableSetDeleteMiss[uint64], genKeys[uint64]))
+//		})
+//	}
+func benchmarkStdSetHasMiss[K comparable](
+	b *testing.B,
+	capacity int,
+	genKeys func(start, end int) []K,
+) {
+	m := make(map[K]struct{}, capacity)
+	keys := genKeys(0, capacity*8/7)
+	misses := genKeys(-capacity, 0)
 
-	for i := 0; b.Loop(); i++ {
-		if len(m) >= capacity*7/8 {
-			b.StopTimer()
-			// Clearing a map is O(N). We do this to stay in a steady state.
-			for k := range m {
-				delete(m, k)
-			}
-			b.StartTimer()
-		}
-		m[keys[i%len(keys)]] = struct{}{}
-	}
-}
-
-func BenchmarkStableSet_Delete(b *testing.B) {
-	const size = 1000
-	ss := NewSet[int](size)
-	for i := range size {
-		ss.Put(i)
-	}
-
-	for i := 0; b.Loop(); i++ {
-		ss.Delete(i % size)
-	}
-}
-
-func BenchmarkStdMap_Delete(b *testing.B) {
-	const size = 1000
-	m := make(map[int]struct{}, size)
-	for i := range size {
-		m[i] = struct{}{}
-	}
-
-	for i := 0; b.Loop(); i++ {
-		delete(m, i%size)
-	}
-}
-
-func BenchmarkLargeScale_StableSet_Delete(b *testing.B) {
-	const capacity = 1 << 20
-	ss := NewSet[int](capacity)
-	for i := range capacity / 2 {
-		ss.Put(i)
-	}
-
-	for i := 0; b.Loop(); i++ {
-		ss.Delete(i % (capacity / 2))
-	}
-}
-
-func BenchmarkLargeScale_StdMap_Delete(b *testing.B) {
-	const capacity = 1 << 20
-	m := make(map[int]struct{}, capacity)
-	for i := range capacity / 2 {
-		m[i] = struct{}{}
-	}
-
-	for i := 0; b.Loop(); i++ {
-		delete(m, i%(capacity/2))
-	}
-}
-
-func BenchmarkLargeScale_StableSet(b *testing.B) {
-	const capacity = 4194304 // 2^22
-	// Pre-generate keys to avoid hashing/gen time in the loop
-	keys := make([]uint64, capacity/2)
-	for i := range keys {
-		keys[i] = uint64(i * 9876543210123) // High entropy distribution
-	}
-
-	ss := NewSet[uint64](capacity)
-	for _, k := range keys {
-		ss.Put(k)
-	}
-
-	for i := 0; b.Loop(); i++ {
-		// Use a large prime to jump around the set and force cache misses
-		_ = ss.Has(keys[(uintptr(i)*1337)%(capacity/2)])
-	}
-}
-
-func BenchmarkLargeScale_StdMap(b *testing.B) {
-	const capacity = 4194304
-	keys := make([]uint64, capacity/2)
-	for i := range keys {
-		keys[i] = uint64(i * 9876543210123)
-	}
-
-	m := make(map[uint64]struct{}, capacity)
 	for _, k := range keys {
 		m[k] = struct{}{}
 	}
 
-	for i := 0; b.Loop(); i++ {
-		_ = m[keys[(uintptr(i)*1337)%(capacity/2)]]
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = m[misses[i%len(misses)]]
 	}
 }
 
-func BenchmarkLargeScale_StableSet_HighLoad(b *testing.B) {
-	const capacity = 4194304
-	// 0.875 is 7/8 load—the theoretical limit for many Swiss Tables
-	const loadFactor = 0.875
-	fillCount := int(float64(capacity) * loadFactor)
+func benchmarkStableSetHasMiss[K comparable](
+	b *testing.B,
+	capacity int,
+	genKeys func(start, end int) []K,
+) {
+	ss := NewSet[K](capacity)
+	keys := genKeys(0, capacity*8/7)
+	misses := genKeys(-capacity, 0)
 
-	keys := make([]uint64, fillCount)
-	for i := range keys {
-		keys[i] = uint64(i * 9876543210123)
-	}
-
-	ss := NewSet[uint64](capacity)
 	for _, k := range keys {
 		ss.Put(k)
 	}
 
-	for i := 0; b.Loop(); i++ {
-		// Use a subset of the keys to ensure we are hitting existing values
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = ss.Has(misses[i%len(misses)])
+	}
+}
+
+func benchmarkStdSetHasHit[K comparable](
+	b *testing.B,
+	capacity int,
+	genKeys func(start, end int) []K,
+) {
+	m := make(map[K]struct{}, capacity)
+	keys := genKeys(0, capacity*8/7)
+	for _, k := range keys {
+		m[k] = struct{}{}
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = m[keys[i%len(keys)]]
+	}
+}
+
+func benchmarkStableSetHasHit[K comparable](
+	b *testing.B,
+	capacity int,
+	genKeys func(start, end int) []K,
+) {
+	ss := NewSet[K](capacity)
+	keys := genKeys(0, capacity*8/7)
+
+	for _, k := range keys {
+		ss.Put(k)
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
 		_ = ss.Has(keys[i%len(keys)])
 	}
 }
 
-func BenchmarkLargeScale_StdMap_HighLoad(b *testing.B) {
-	const capacity = 4194304
-	// 0.875 is 7/8 load—the theoretical limit for many Swiss Tables
-	const loadFactor = 0.875
-	fillCount := int(float64(capacity) * loadFactor)
+func benchmarkStdSetPutMiss[K comparable](
+	b *testing.B,
+	capacity int,
+	genKeys func(start, end int) []K,
+) {
+	keys := genKeys(0, capacity*8/7)
+	b.ResetTimer()
 
-	keys := make([]uint64, fillCount)
-	for i := range keys {
-		keys[i] = uint64(i * 9876543210123)
-	}
+	for i := 0; i < b.N; i++ {
+		b.StartTimer()
+		m := make(map[K]struct{}, capacity)
+		b.StopTimer()
 
-	m := make(map[uint64]struct{}, capacity)
-	for _, k := range keys {
-		m[k] = struct{}{}
-	}
-
-	for i := 0; b.Loop(); i++ {
-		_ = m[keys[(uintptr(i)*1337)%(capacity/2)]]
+		for _, key := range keys {
+			m[key] = struct{}{}
+		}
 	}
 }
 
-func BenchmarkMemoryUsage_StableSet(b *testing.B) {
-	var m1, m2 runtime.MemStats
+func benchmarkStableSetPutMiss[K comparable](
+	b *testing.B,
+	capacity int,
+	genKeys func(start, end int) []K,
+) {
+	keys := genKeys(0, capacity*8/7)
+	s := NewSet[K](capacity)
+	b.ResetTimer()
 
-	g := group[uint64, struct{}]{}
-	for idx := range groupSize {
-		g.ctrls[idx] = 0x7b
-		g.slots[idx] = uint64(idx)
+	for i := 0; i < b.N; i++ {
+		b.StartTimer()
+		s.Reset()
+		b.StopTimer()
+
+		for _, key := range keys {
+			_, _ = s.Put(key)
+		}
 	}
-
-	b.Logf("size of table: %v B\n", unsafe.Sizeof(g))
-
-	runtime.GC()
-	runtime.ReadMemStats(&m1)
-
-	ss := NewSet[uint64](16777216)
-	_ = ss
-
-	runtime.ReadMemStats(&m2)
-	b.Logf("Actual Memory: %v MB\n", (m2.Alloc-m1.Alloc)/1024/1024)
 }
 
-func BenchmarkMemoryUsage_StdMap(b *testing.B) {
-	var m1, m2 runtime.MemStats
-	runtime.GC()
-	runtime.ReadMemStats(&m1)
+func benchmarkStdSetPutHit[K comparable](
+	b *testing.B,
+	capacity int,
+	genKeys func(start, end int) []K,
+) {
+	keys := genKeys(0, capacity*8/7)
+	m := make(map[K]struct{}, capacity)
 
-	ss := make(map[uint64]struct{}, 16777216)
-	_ = ss
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		m[keys[i%len(keys)]] = struct{}{}
+	}
+}
 
-	runtime.ReadMemStats(&m2)
-	b.Logf("Actual Memory: %v MB\n", (m2.Alloc-m1.Alloc)/1024/1024)
+func benchmarkStableSetPutHit[K comparable](
+	b *testing.B,
+	capacity int,
+	genKeys func(start, end int) []K,
+) {
+	keys := genKeys(0, capacity*8/7-1)
+	s := NewSet[K](capacity)
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		_, _ = s.Put(keys[i%len(keys)])
+	}
+}
+
+func benchmarkStdSetDeleteMiss[K comparable](
+	b *testing.B,
+	capacity int,
+	genKeys func(start, end int) []K,
+) {
+	keys := genKeys(0, capacity*8/7)
+	m := make(map[K]struct{}, capacity)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		delete(m, keys[i%len(keys)])
+	}
+}
+
+func benchmarkStableSetDeleteMiss[K comparable](
+	b *testing.B,
+	capacity int,
+	genKeys func(start, end int) []K,
+) {
+	keys := genKeys(0, capacity*8/7)
+	s := NewSet[K](capacity)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = s.Delete(keys[i%len(keys)])
+	}
+}
+
+func genKeys[K comparable](start, end int) []K {
+	var k K
+	switch any(k).(type) {
+	case uint32:
+		keys := make([]uint32, end-start)
+		for i := range keys {
+			keys[i] = uint32(start + i)
+		}
+		return unsafeConvertSlice[K](keys)
+	case uint64:
+		keys := make([]uint64, end-start)
+		for i := range keys {
+			keys[i] = uint64(start + i)
+		}
+		return unsafeConvertSlice[K](keys)
+	case string:
+		keys := make([]string, end-start)
+		for i := range keys {
+			keys[i] = strconv.Itoa(start + i)
+		}
+		return unsafeConvertSlice[K](keys)
+	default:
+		panic("not reached")
+	}
+}
+
+func benchSimulateLoadSet[K comparable](
+	benchFunc func(b *testing.B, capacity int, keysFunc func(start, end int) []K),
+	keysFunc func(start, end int) []K,
+) func(b *testing.B) {
+	return func(b *testing.B) {
+		for _, size := range sizes {
+			b.Run("capacity="+strconv.Itoa(size), func(b *testing.B) {
+				benchFunc(b, size, keysFunc)
+			})
+		}
+	}
 }
