@@ -1,9 +1,12 @@
 package stablemap
 
 import (
+	"errors"
 	"hash/maphash"
 	"unsafe"
 )
+
+var ErrTableFull = errors.New("table is full, compaction required")
 
 const (
 	slotEmpty   = 0x80
@@ -84,14 +87,15 @@ func (t *table[K, V]) get(key K) (V, bool) {
 		ctrl := *(*uint64)(unsafe.Pointer(&g.ctrls))
 
 		// SIMD-like match
-		matches := matchH2(ctrl, h2)
-		for matches != 0 {
-			idx := matches.first()
-			if g.slots[idx] == key {
-				return g.values[idx], true
-			}
+		if matches := matchH2(ctrl, h2); matches != 0 {
+			for matches != 0 {
+				idx := matches.first()
+				if g.slots[idx] == key {
+					return g.values[idx], true
+				}
 
-			matches = matches.removeFirst()
+				matches = matches.removeFirst()
+			}
 		}
 
 		// Termination
@@ -106,10 +110,10 @@ func (t *table[K, V]) get(key K) (V, bool) {
 	return t.emptyV, false
 }
 
-func (t *table[K, V]) put(key K, value V) (bool, bool) {
+func (t *table[K, V]) put(key K, value V) (bool, error) {
 	// We reached the 87.5% of the capacity, table needs rehashing.
 	if t.size >= t.capacityEffective {
-		return false, true
+		return false, ErrTableFull
 	}
 
 	var (
@@ -130,7 +134,7 @@ func (t *table[K, V]) put(key K, value V) (bool, bool) {
 		matchMask := matchH2(ctrl, h2)
 		for matchMask != 0 {
 			if g.slots[matchMask.first()] == key {
-				return false, false
+				return false, nil
 			}
 
 			matchMask = matchMask.removeFirst()
@@ -165,16 +169,16 @@ func (t *table[K, V]) put(key K, value V) (bool, bool) {
 		targetGroup.values[targetSlot] = value
 		t.size++
 
-		return true, false
+		return true, nil
 	}
 
-	return false, true
+	return false, ErrTableFull
 }
 
-func (t *table[K, V]) set(key K, value V) bool {
+func (t *table[K, V]) set(key K, value V) error {
 	// We reached the 87.5% of the capacity, table needs rehashing.
 	if t.size >= t.capacityEffective {
-		return true
+		return ErrTableFull
 	}
 
 	var (
@@ -197,7 +201,7 @@ func (t *table[K, V]) set(key K, value V) bool {
 			idx := matchMask.first()
 			if g.slots[idx] == key {
 				g.values[idx] = value
-				return false
+				return nil
 			}
 
 			matchMask = matchMask.removeFirst()
@@ -232,11 +236,10 @@ func (t *table[K, V]) set(key K, value V) bool {
 		targetGroup.values[targetSlot] = value
 		t.size++
 
-		return false
+		return nil
 	}
 
-	return true
-
+	return ErrTableFull
 }
 
 func (t *table[K, V]) delete(key K) bool {
@@ -281,6 +284,23 @@ func (t *table[K, V]) Reset() {
 
 	t.size = 0
 	t.tombstones = 0
+}
+
+func (t *table[K, V]) Stats() Stats {
+	var tombstonesCapacityRatio, tombstonesSizeRatio float32
+	if t.capacity > 0 {
+		tombstonesCapacityRatio = float32(t.tombstones) / float32(t.capacity)
+	}
+	if t.size > 0 {
+		tombstonesSizeRatio = float32(t.tombstones) / float32(t.size)
+	}
+
+	return Stats{
+		Size:                    int(t.size),
+		Tombstones:              int(t.tombstones),
+		TombstonesCapacityRatio: tombstonesCapacityRatio,
+		TombstonesSizeRatio:     tombstonesSizeRatio,
+	}
 }
 
 func (t *table[K, V]) Compact() {

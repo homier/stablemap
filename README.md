@@ -35,43 +35,48 @@ import "github.com/homier/stablemap"
 // Initialize with a capacity hint
 sm := stablemap.New[int, string](1024)
 
-// Add elements
-needCompaction := sm.Set(42, "foo")
-if needCompaction {
-    ss.Compact()
+// Add elements - Set returns error if compaction is needed
+err := sm.Set(42, "foo")
+if errors.Is(err, stablemap.ErrTableFull) {
+    sm.Compact()
+    sm.Set(42, "foo") // retry
 }
 
-// Check existence
-v, ok := sm.Has(42)
+// Get value
+v, ok := sm.Get(42)
 if ok {
     fmt.Println("Found it: ", v)
 }
 
-ok, needCompaction = sm.Put(42, "bar")
+// Put returns (isNew, error) - fails if key exists
+ok, err = sm.Put(43, "bar")
 if !ok {
     fmt.Println("Can't put a value, key exists")
 }
-
-if needCompaction {
+if errors.Is(err, stablemap.ErrTableFull) {
     sm.Compact()
 }
 
-needCompaction = sm.Set(42, "bar")
-if needCompaction {
+// Set overwrites existing values
+err = sm.Set(42, "bar")
+if errors.Is(err, stablemap.ErrTableFull) {
     sm.Compact()
+    sm.Set(42, "bar")
 }
 
-v, ok := sm.Has(42)
+v, ok = sm.Get(42)
 if ok {
     fmt.Println("Found it! Now it should be `bar`: ", v)
 }
 
+// Delete element
 if sm.Delete(42) {
     fmt.Println("Deleted it")
 }
 
-if !sm.Has(42) {
-    fmt.Println("Do not exist anymore!")
+_, ok = sm.Get(42)
+if !ok {
+    fmt.Println("Does not exist anymore!")
 }
 ```
 
@@ -82,10 +87,11 @@ import "github.com/homier/stablemap"
 // Initialize with a capacity hint
 ss := stablemap.NewSet[int](1024)
 
-// Add elements
-ok, needCompaction := ss.Put(42)
-if needCompaction {
+// Add elements - Put returns (isNew, error)
+ok, err := ss.Put(42)
+if errors.Is(err, stablemap.ErrTableFull) {
     ss.Compact()
+    ss.Put(42) // retry
 }
 
 // Check existence
@@ -99,7 +105,22 @@ if ss.Delete(42) {
 }
 
 if !ss.Has(42) {
-    fmt.Println("Do not exist anymore!")
+    fmt.Println("Does not exist anymore!")
+}
+```
+
+### Stats
+Both `StableMap` and `StableSet` provide a `Stats()` method for monitoring table health:
+```go
+stats := sm.Stats()
+fmt.Printf("Size: %d\n", stats.Size)
+fmt.Printf("Tombstones: %d\n", stats.Tombstones)
+fmt.Printf("Tombstones/Capacity: %.2f\n", stats.TombstonesCapacityRatio)
+fmt.Printf("Tombstones/Size: %.2f\n", stats.TombstonesSizeRatio)
+
+// Use stats to decide when to compact
+if stats.TombstonesCapacityRatio > 0.25 {
+    sm.Compact()
 }
 ```
 
@@ -113,6 +134,5 @@ Use Go map first. But, while the standard Go map is the right choice for most ca
 1. Expand unit tests for edge cases (maximum capacity, hash collisions, rehashing).
 2. More proper benchmarks across different CPU architectures.
 3. Explore platform-specific SIMD (SSE/AVX) as an alternative to the current SWAR implementation.
-4. Implement load reporting (tombstone density, probe chain length).
-5. Beatiful table for benchmarks and memory consumption in README.
+4. Beautiful table for benchmarks and memory consumption in README.
 

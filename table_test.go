@@ -34,27 +34,27 @@ func TestTable_EffectiveCapacity(t *testing.T) {
 func TestTable_put(t *testing.T) {
 	tt := newTable[string, string](4096)
 
-	ok, rehash := tt.put("foo", "bar")
+	ok, err := tt.put("foo", "bar")
 	require.True(t, ok)
-	assert.False(t, rehash)
+	assert.NoError(t, err)
 
-	ok, rehash = tt.put("foo", "bar2")
+	ok, err = tt.put("foo", "bar2")
 	require.False(t, ok)
-	assert.False(t, rehash)
+	assert.NoError(t, err)
 }
 
 func TestTable_put_Fill(t *testing.T) {
 	tt := newTable[uint64, uint64](4096)
 
 	for i := range uint64(tt.EffectiveCapacity()) {
-		ok, rehash := tt.put(i, i)
+		ok, err := tt.put(i, i)
 		require.True(t, ok)
-		require.False(t, rehash)
+		require.NoError(t, err)
 	}
 
-	ok, rehash := tt.put(uint64(tt.EffectiveCapacity())+1, uint64(tt.EffectiveCapacity())+1)
+	ok, err := tt.put(uint64(tt.EffectiveCapacity())+1, uint64(tt.EffectiveCapacity())+1)
 	require.False(t, ok)
-	require.True(t, rehash)
+	require.ErrorIs(t, err, ErrTableFull)
 }
 
 func TestTable_put_Tombstones(t *testing.T) {
@@ -66,17 +66,17 @@ func TestTable_put_Tombstones(t *testing.T) {
 
 	tt := newTable(16, WithHashFunc[string, string](collisionHash))
 
-	ok, r := tt.put("A", "foo") // Slot 0
+	ok, err := tt.put("A", "foo") // Slot 0
 	require.True(t, ok)
-	require.False(t, r)
+	require.NoError(t, err)
 
-	ok, r = tt.put("B", "bar") // Slot 1 (via probe)
+	ok, err = tt.put("B", "bar") // Slot 1 (via probe)
 	require.True(t, ok)
-	require.False(t, r)
+	require.NoError(t, err)
 
-	ok, r = tt.put("C", "lol") // Slot 2 (via probe)
+	ok, err = tt.put("C", "lol") // Slot 2 (via probe)
 	require.True(t, ok)
-	require.False(t, r)
+	require.NoError(t, err)
 
 	// Delete the "bridge" element
 	require.True(t, tt.delete("B"))
@@ -90,15 +90,15 @@ func TestTable_put_Tombstones(t *testing.T) {
 func TestTable_set(t *testing.T) {
 	tt := newTable[string, string](16)
 
-	compact := tt.set("foo", "foo")
-	assert.False(t, compact)
+	err := tt.set("foo", "foo")
+	assert.NoError(t, err)
 
 	v, ok := tt.get("foo")
 	require.True(t, ok)
 	require.Equal(t, "foo", v)
 
-	compact = tt.set("foo", "bar")
-	assert.False(t, compact)
+	err = tt.set("foo", "bar")
+	assert.NoError(t, err)
 
 	v, ok = tt.get("foo")
 	require.True(t, ok)
@@ -111,9 +111,9 @@ func TestTable_Compact(t *testing.T) {
 
 	// 1. Fill it up to the effective capacity
 	for i := 0; i < tt.EffectiveCapacity(); i++ {
-		ok, rehash := tt.put(i, i)
+		ok, err := tt.put(i, i)
 		require.True(t, ok)
-		require.False(t, rehash)
+		require.NoError(t, err)
 	}
 
 	// 2. Delete almost everything to create many tombstones
@@ -143,9 +143,9 @@ func TestTable_Compact_Sync(t *testing.T) {
 
 	// 1. Fill it up to trigger many tombstones
 	for i := range 10 {
-		ok, compact := tt.put(i, i*100)
+		ok, err := tt.put(i, i*100)
 		require.True(t, ok)
-		require.False(t, compact)
+		require.NoError(t, err)
 	}
 
 	keys := make([]int, 0, 5)
@@ -198,11 +198,56 @@ func TestTable_put_BoundaryMirror(t *testing.T) {
 		lastIdxKey++
 	}
 
-	ok, r := tt.put(lastIdxKey, lastIdxKey)
+	ok, err := tt.put(lastIdxKey, lastIdxKey)
 	require.True(t, ok)
-	require.False(t, r)
+	require.NoError(t, err)
 
 	v, ok := tt.get(lastIdxKey)
 	require.True(t, ok, "Failed to find key at the boundary of the capacity")
 	require.Equal(t, lastIdxKey, v)
+}
+
+func TestTable_Stats(t *testing.T) {
+	const capacity = 32
+	tt := newTable[int, int](capacity)
+
+	// 1. Empty table
+	stats := tt.Stats()
+	assert.Equal(t, 0, stats.Size)
+	assert.Equal(t, 0, stats.Tombstones)
+	assert.Equal(t, float32(0), stats.TombstonesCapacityRatio)
+	assert.Equal(t, float32(0), stats.TombstonesSizeRatio)
+
+	// 2. Table with some items
+	for i := range 10 {
+		ok, err := tt.put(i, i)
+		require.True(t, ok)
+		require.NoError(t, err)
+	}
+
+	stats = tt.Stats()
+	assert.Equal(t, 10, stats.Size)
+	assert.Equal(t, 0, stats.Tombstones)
+	assert.Equal(t, float32(0), stats.TombstonesCapacityRatio)
+	assert.Equal(t, float32(0), stats.TombstonesSizeRatio)
+
+	// 3. Delete some items to create tombstones
+	for i := range 5 {
+		require.True(t, tt.delete(i))
+	}
+
+	stats = tt.Stats()
+	assert.Equal(t, 5, stats.Size)
+	assert.Equal(t, 5, stats.Tombstones)
+	assert.Equal(t, float32(5)/float32(capacity), stats.TombstonesCapacityRatio)
+	assert.Equal(t, float32(5)/float32(5), stats.TombstonesSizeRatio)
+
+	// 4. After compaction - tombstones should be cleared
+	tt.Compact()
+
+	stats = tt.Stats()
+	assert.Equal(t, 5, stats.Size)
+	assert.Equal(t, 0, stats.Tombstones)
+	assert.Equal(t, float32(0), stats.TombstonesCapacityRatio)
+	assert.Equal(t, float32(0), stats.TombstonesSizeRatio)
 }
