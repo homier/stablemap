@@ -47,7 +47,7 @@ func TestStableSet_Stats(t *testing.T) {
 	assert.Equal(t, 14, stats.EffectiveCapacity) // 16 * 7/8 = 14
 
 	for i := range 5 {
-		ss.Put(i)
+		_, _ = ss.Put(i)
 	}
 
 	stats = ss.Stats()
@@ -58,7 +58,7 @@ func TestStableSet_Compact(t *testing.T) {
 	ss := NewSet[int](16)
 
 	for i := range 10 {
-		ss.Put(i)
+		_, _ = ss.Put(i)
 	}
 
 	for i := range 5 {
@@ -84,7 +84,7 @@ func TestStableSet_Reset(t *testing.T) {
 	ss := NewSet[int](16)
 
 	for i := range 5 {
-		ss.Put(i)
+		_, _ = ss.Put(i)
 	}
 
 	assert.Equal(t, 5, ss.Stats().Size)
@@ -115,6 +115,6 @@ func TestStableSet_WithHashFunc(t *testing.T) {
 
 	ss := NewSet(16, WithHashFunc[int, struct{}](customHash))
 
-	ss.Put(1)
+	_, _ = ss.Put(1)
 	assert.True(t, ss.Has(1))
 }

@@ -50,7 +50,7 @@ func TestStableMap_Stats(t *testing.T) {
 	assert.Equal(t, 14, stats.EffectiveCapacity) // 16 * 7/8 = 14
 
 	for i := range 5 {
-		sm.Set(i, i)
+		_ = sm.Set(i, i)
 	}
 
 	stats = sm.Stats()
@@ -61,7 +61,7 @@ func TestStableMap_Compact(t *testing.T) {
 	sm := New[int, int](16)
 
 	for i := range 10 {
-		sm.Set(i, i*10)
+		_ = sm.Set(i, i*10)
 	}
 
 	for i := range 5 {
@@ -89,7 +89,7 @@ func TestStableMap_Reset(t *testing.T) {
 	sm := New[int, int](16)
 
 	for i := range 5 {
-		sm.Set(i, i)
+		_ = sm.Set(i, i)
 	}
 
 	assert.Equal(t, 5, sm.Stats().Size)
@@ -122,7 +122,7 @@ func TestStableMap_WithHashFunc(t *testing.T) {
 
 	sm := New(16, WithHashFunc[int, int](customHash))
 
-	sm.Set(1, 100)
+	_ = sm.Set(1, 100)
 	v, ok := sm.Get(1)
 	require.True(t, ok)
 	assert.Equal(t, 100, v)

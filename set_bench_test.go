@@ -20,7 +20,7 @@ func BenchmarkStableSet_Contains(b *testing.B) {
 	keys := setupBenchData(capacity / 2)
 	ss := NewSet[uint64](capacity)
 	for _, k := range keys {
-		ss.Put(k)
+		_, _ = ss.Put(k)
 	}
 
 	for i := 0; b.Loop(); i++ {
@@ -55,7 +55,7 @@ func BenchmarkStableSet_Put(b *testing.B) {
 			ss.Reset()
 			b.StartTimer()
 		}
-		ss.Put(keys[i%len(keys)])
+		_, _ = ss.Put(keys[i%len(keys)])
 	}
 }
 
@@ -82,7 +82,7 @@ func BenchmarkStableSet_Delete(b *testing.B) {
 	const size = 1000
 	ss := NewSet[int](size)
 	for i := range size {
-		ss.Put(i)
+		_, _ = ss.Put(i)
 	}
 
 	for i := 0; b.Loop(); i++ {
@@ -106,7 +106,7 @@ func BenchmarkLargeScale_StableSet_Delete(b *testing.B) {
 	const capacity = 1 << 20
 	ss := NewSet[int](capacity)
 	for i := range capacity / 2 {
-		ss.Put(i)
+		_, _ = ss.Put(i)
 	}
 
 	for i := 0; b.Loop(); i++ {
@@ -136,7 +136,7 @@ func BenchmarkLargeScale_StableSet(b *testing.B) {
 
 	ss := NewSet[uint64](capacity)
 	for _, k := range keys {
-		ss.Put(k)
+		_, _ = ss.Put(k)
 	}
 
 	for i := 0; b.Loop(); i++ {
@@ -175,7 +175,7 @@ func BenchmarkLargeScale_StableSet_HighLoad(b *testing.B) {
 
 	ss := NewSet[uint64](capacity)
 	for _, k := range keys {
-		ss.Put(k)
+		_, _ = ss.Put(k)
 	}
 
 	for i := 0; b.Loop(); i++ {
