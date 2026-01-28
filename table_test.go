@@ -25,10 +25,10 @@ func TestTable_init(t *testing.T) {
 	require.Equal(t, uintptr((4096/groupSize)-1), tt.numGroupsMask)
 }
 
-func TestTable_EffectiveCapacity(t *testing.T) {
+func TestTable_Stats_Capacity(t *testing.T) {
 	tt := newTable[uint64, struct{}](4096)
 
-	require.Equal(t, 4096*7/8, tt.EffectiveCapacity())
+	require.Equal(t, 4096*7/8, tt.Stats().EffectiveCapacity)
 }
 
 func TestTable_put(t *testing.T) {
@@ -45,14 +45,15 @@ func TestTable_put(t *testing.T) {
 
 func TestTable_put_Fill(t *testing.T) {
 	tt := newTable[uint64, uint64](4096)
+	capacity := tt.Stats().EffectiveCapacity
 
-	for i := range uint64(tt.EffectiveCapacity()) {
+	for i := range uint64(capacity) {
 		ok, err := tt.put(i, i)
 		require.True(t, ok)
 		require.NoError(t, err)
 	}
 
-	ok, err := tt.put(uint64(tt.EffectiveCapacity())+1, uint64(tt.EffectiveCapacity())+1)
+	ok, err := tt.put(uint64(capacity)+1, uint64(capacity)+1)
 	require.False(t, ok)
 	require.ErrorIs(t, err, ErrTableFull)
 }
@@ -106,18 +107,18 @@ func TestTable_set(t *testing.T) {
 }
 
 func TestTable_Compact(t *testing.T) {
-	const capacity = 32
-	tt := newTable[int, int](capacity)
+	tt := newTable[int, int](32)
+	capacity := tt.Stats().EffectiveCapacity
 
 	// 1. Fill it up to the effective capacity
-	for i := 0; i < tt.EffectiveCapacity(); i++ {
+	for i := 0; i < capacity; i++ {
 		ok, err := tt.put(i, i)
 		require.True(t, ok)
 		require.NoError(t, err)
 	}
 
 	// 2. Delete almost everything to create many tombstones
-	for i := 0; i < tt.EffectiveCapacity()-1; i++ {
+	for i := 0; i < capacity-1; i++ {
 		require.True(t, tt.delete(i))
 	}
 
@@ -125,7 +126,7 @@ func TestTable_Compact(t *testing.T) {
 	tt.Compact()
 
 	// 4. Verify the one remaining element
-	lastIdx := tt.EffectiveCapacity() - 1
+	lastIdx := capacity - 1
 	v, ok := tt.get(lastIdx)
 	require.Truef(t, ok, "Lost key %d after compaction: %b", lastIdx)
 	require.Equal(t, lastIdx, v)

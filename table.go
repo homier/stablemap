@@ -8,6 +8,14 @@ import (
 
 var ErrTableFull = errors.New("table is full, compaction required")
 
+type Stats struct {
+	Size                    int
+	EffectiveCapacity       int
+	Tombstones              int
+	TombstonesCapacityRatio float32
+	TombstonesSizeRatio     float32
+}
+
 const (
 	slotEmpty   = 0x80
 	slotDeleted = 0xFE
@@ -73,8 +81,22 @@ func (t *table[K, V]) init(capacity int, opts ...Option[K, V]) {
 	}
 }
 
-func (t *table[K, V]) EffectiveCapacity() int {
-	return int(t.capacityEffective)
+func (t *table[K, V]) Stats() Stats {
+	var tombstonesCapacityRatio, tombstonesSizeRatio float32
+	if t.capacity > 0 {
+		tombstonesCapacityRatio = float32(t.tombstones) / float32(t.capacity)
+	}
+	if t.size > 0 {
+		tombstonesSizeRatio = float32(t.tombstones) / float32(t.size)
+	}
+
+	return Stats{
+		Size:                    int(t.size),
+		EffectiveCapacity:       int(t.capacityEffective),
+		Tombstones:              int(t.tombstones),
+		TombstonesCapacityRatio: tombstonesCapacityRatio,
+		TombstonesSizeRatio:     tombstonesSizeRatio,
+	}
 }
 
 func (t *table[K, V]) get(key K) (V, bool) {
@@ -284,23 +306,6 @@ func (t *table[K, V]) Reset() {
 
 	t.size = 0
 	t.tombstones = 0
-}
-
-func (t *table[K, V]) Stats() Stats {
-	var tombstonesCapacityRatio, tombstonesSizeRatio float32
-	if t.capacity > 0 {
-		tombstonesCapacityRatio = float32(t.tombstones) / float32(t.capacity)
-	}
-	if t.size > 0 {
-		tombstonesSizeRatio = float32(t.tombstones) / float32(t.size)
-	}
-
-	return Stats{
-		Size:                    int(t.size),
-		Tombstones:              int(t.tombstones),
-		TombstonesCapacityRatio: tombstonesCapacityRatio,
-		TombstonesSizeRatio:     tombstonesSizeRatio,
-	}
 }
 
 func (t *table[K, V]) Compact() {
