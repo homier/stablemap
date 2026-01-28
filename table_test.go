@@ -25,6 +25,18 @@ func TestTable_init(t *testing.T) {
 	require.Equal(t, uintptr((4096/groupSize)-1), tt.numGroupsMask)
 }
 
+func TestTable_init_MinCapacity(t *testing.T) {
+	// Capacity 0 should create a table with 1 group (8 slots)
+	tt := newTable[int, int](0)
+	require.Len(t, tt.groups, 1)
+	require.Equal(t, 7, tt.Stats().EffectiveCapacity)
+
+	// Capacity smaller than groupSize should also create 1 group
+	tt = newTable[int, int](3)
+	require.Len(t, tt.groups, 1)
+	require.Equal(t, 7, tt.Stats().EffectiveCapacity)
+}
+
 func TestTable_Stats_Capacity(t *testing.T) {
 	tt := newTable[uint64, struct{}](4096)
 

@@ -59,6 +59,7 @@ func WithHashFunc[K comparable, V any](f HashFunc[K]) Option[K, V] {
 }
 
 func (t *table[K, V]) init(capacity int, opts ...Option[K, V]) {
+	capacity = max(capacity, groupSize)
 	normalizedCapacity := uintptr(NextPowerOf2(uint32(capacity)))
 	// Number of groups required
 	numGroups := normalizedCapacity / groupSize
