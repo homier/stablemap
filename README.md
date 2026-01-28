@@ -103,8 +103,19 @@ if !ss.Has(42) {
 }
 ```
 
-### Stats
-Both `StableMap` and `StableSet` provide a `Stats()` method for monitoring table health:
+### Options
+Both `StableMap` and `StableSet` support options for customization:
+```go
+// Custom hash function
+sm := stablemap.New[int, string](1024, stablemap.WithHashFunc[int, string](myHashFunc))
+
+// Custom compaction threshold factor (default is 3)
+// NeedsCompaction() returns true when tombstones >= effectiveCapacity/factor
+sm := stablemap.New[int, string](1024, stablemap.WithCompactionThresholdFactor[int, string](2))
+```
+
+### Stats and Compaction
+Both `StableMap` and `StableSet` provide a `Stats()` method for monitoring table health and a `NeedsCompaction()` method to check if compaction is recommended:
 ```go
 stats := sm.Stats()
 fmt.Printf("Size: %d\n", stats.Size)
@@ -112,8 +123,10 @@ fmt.Printf("Tombstones: %d\n", stats.Tombstones)
 fmt.Printf("Tombstones/Capacity: %.2f\n", stats.TombstonesCapacityRatio)
 fmt.Printf("Tombstones/Size: %.2f\n", stats.TombstonesSizeRatio)
 
-// Use stats to decide when to compact
-if stats.TombstonesCapacityRatio > 0.25 {
+// Use NeedsCompaction() to decide when to compact
+// Returns true when tombstones reach 1/3 of effective capacity (default)
+// The threshold factor can be configured via WithCompactionThresholdFactor
+if sm.NeedsCompaction() {
     sm.Compact()
 }
 ```

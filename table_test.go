@@ -303,3 +303,58 @@ func TestTable_Stats(t *testing.T) {
 	assert.Equal(t, float32(0), stats.TombstonesCapacityRatio)
 	assert.Equal(t, float32(0), stats.TombstonesSizeRatio)
 }
+
+func TestTable_NeedsCompaction(t *testing.T) {
+	tt := newTable[int, int](32)
+	effectiveCapacity := tt.Stats().EffectiveCapacity
+	threshold := effectiveCapacity / 3
+
+	// 1. Empty table - no compaction needed
+	assert.False(t, tt.NeedsCompaction())
+
+	// 2. Fill the table
+	for i := range effectiveCapacity {
+		ok, err := tt.put(i, i)
+		require.True(t, ok)
+		require.NoError(t, err)
+	}
+	assert.False(t, tt.NeedsCompaction())
+
+	// 3. Delete items just below the threshold
+	for i := range threshold - 1 {
+		require.True(t, tt.delete(i))
+	}
+	assert.False(t, tt.NeedsCompaction(), "should not need compaction below threshold")
+
+	// 4. Delete one more to reach the threshold
+	require.True(t, tt.delete(threshold-1))
+	assert.True(t, tt.NeedsCompaction(), "should need compaction at threshold")
+
+	// 5. After compaction - no longer needs compaction
+	tt.Compact()
+	assert.False(t, tt.NeedsCompaction(), "should not need compaction after Compact()")
+}
+
+func TestTable_NeedsCompaction_CustomFactor(t *testing.T) {
+	// Use factor of 2 instead of default 3
+	tt := newTable(32, WithCompactionThresholdFactor[int, int](2))
+	effectiveCapacity := tt.Stats().EffectiveCapacity
+	threshold := effectiveCapacity / 2
+
+	// Fill the table
+	for i := range effectiveCapacity {
+		ok, err := tt.put(i, i)
+		require.True(t, ok)
+		require.NoError(t, err)
+	}
+
+	// Delete items just below the threshold
+	for i := range threshold - 1 {
+		require.True(t, tt.delete(i))
+	}
+	assert.False(t, tt.NeedsCompaction(), "should not need compaction below custom threshold")
+
+	// Delete one more to reach the threshold
+	require.True(t, tt.delete(threshold-1))
+	assert.True(t, tt.NeedsCompaction(), "should need compaction at custom threshold")
+}

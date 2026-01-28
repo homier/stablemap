@@ -35,14 +35,18 @@ var (
 	}
 )
 
+const defaultCompactionThresholdFactor = 3
+
 type table[K comparable, V any] struct {
 	groups []group[K, V]
 
-	capacity          uintptr
-	numGroupsMask     uintptr
-	capacityEffective uintptr
-	size              uintptr
-	tombstones        uintptr
+	capacity                     uintptr
+	numGroupsMask                uintptr
+	capacityEffective            uintptr
+	tombstoneCompactionThreshold uintptr
+	compactionThresholdFactor    uintptr
+	size                         uintptr
+	tombstones                   uintptr
 
 	hashFunc HashFunc[K]
 
@@ -51,10 +55,21 @@ type table[K comparable, V any] struct {
 
 type Option[K comparable, V any] func(t *table[K, V])
 
-// Override default hash function.
+// WithHashFunc overrides the default hash function.
 func WithHashFunc[K comparable, V any](f HashFunc[K]) Option[K, V] {
 	return func(t *table[K, V]) {
 		t.hashFunc = f
+	}
+}
+
+// WithCompactionThresholdFactor sets the factor used to determine when compaction
+// is needed. NeedsCompaction returns true when tombstones >= effectiveCapacity/factor.
+// Default is 3 (compaction needed when tombstones reach 1/3 of effective capacity).
+func WithCompactionThresholdFactor[K comparable, V any](factor int) Option[K, V] {
+	return func(t *table[K, V]) {
+		if factor > 0 {
+			t.compactionThresholdFactor = uintptr(factor)
+		}
 	}
 }
 
@@ -69,6 +84,7 @@ func (t *table[K, V]) init(capacity int, opts ...Option[K, V]) {
 	t.capacity = normalizedCapacity
 	t.numGroupsMask = numGroupsMask
 	t.capacityEffective = normalizedCapacity * 7 / 8
+	t.compactionThresholdFactor = defaultCompactionThresholdFactor
 
 	// Initialize all control bytes to Empty
 	t.Reset()
@@ -76,6 +92,9 @@ func (t *table[K, V]) init(capacity int, opts ...Option[K, V]) {
 	for _, opt := range opts {
 		opt(t)
 	}
+
+	// Calculate threshold after options are applied
+	t.tombstoneCompactionThreshold = t.capacityEffective / t.compactionThresholdFactor
 
 	if t.hashFunc == nil {
 		t.hashFunc = MakeDefaultHashFunc[K](maphash.MakeSeed())
@@ -98,6 +117,14 @@ func (t *table[K, V]) Stats() Stats {
 		TombstonesCapacityRatio: tombstonesCapacityRatio,
 		TombstonesSizeRatio:     tombstonesSizeRatio,
 	}
+}
+
+// NeedsCompaction returns true if the table has accumulated enough tombstones
+// to warrant compaction. The threshold is when tombstones reach at least
+// effectiveCapacity/factor, where factor defaults to 3 and can be configured
+// via WithCompactionThresholdFactor.
+func (t *table[K, V]) NeedsCompaction() bool {
+	return t.tombstones >= t.tombstoneCompactionThreshold
 }
 
 func (t *table[K, V]) get(key K) (V, bool) {
