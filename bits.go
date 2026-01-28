@@ -52,3 +52,23 @@ func matchEmpty(group uint64) bitset {
 func matchEmptyOrDeleted(group uint64) bitset {
 	return bitset(group & bitsetMSB)
 }
+
+// invertCtrls transforms control bytes for compaction:
+// Full (0x00-0x7F) -> Deleted (0xFE)
+// Deleted (0xFE) -> Empty (0x80)
+// Empty (0x80) -> Empty (0x80)
+//
+//go:inline
+func invertCtrls(ctrl uint64) uint64 {
+	// Detect full slots (MSB=0)
+	isFull := ^ctrl & bitsetMSB
+
+	// Spread 0x80 -> 0xFE for full slots (set bits 7-1, leave bit 0 clear)
+	fullResult := isFull | (isFull >> 1) | (isFull >> 2) | (isFull >> 3) |
+		(isFull >> 4) | (isFull >> 5) | (isFull >> 6)
+
+	// Empty/Deleted both map to 0x80 (just keep MSB)
+	highBits := ctrl & bitsetMSB
+
+	return fullResult | highBits
+}

@@ -316,17 +316,10 @@ func (t *table[K, V]) Compact() {
 	// slots as DELETED gives us a marker to locate the previously FULL slots.
 
 	// Mark all DELETED slots as EMPTY and all FULL slots as DELETED.
-	// TODO: Use bitwise operations for inverting ctrls
 	for i := range t.groups {
 		g := &t.groups[i]
-		for j := range groupSize {
-			c := g.ctrls[j]
-			if c < 0x80 {
-				g.ctrls[j] = slotDeleted
-			} else if c == slotDeleted {
-				g.ctrls[j] = slotEmpty
-			}
-		}
+		ctrl := *(*uint64)(unsafe.Pointer(&g.ctrls))
+		*(*uint64)(unsafe.Pointer(&g.ctrls)) = invertCtrls(ctrl)
 	}
 
 	for idx := 0; idx < len(t.groups); idx++ {

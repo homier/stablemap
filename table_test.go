@@ -111,7 +111,7 @@ func TestTable_Compact(t *testing.T) {
 	capacity := tt.Stats().EffectiveCapacity
 
 	// 1. Fill it up to the effective capacity
-	for i := 0; i < capacity; i++ {
+	for i := range capacity {
 		ok, err := tt.put(i, i)
 		require.True(t, ok)
 		require.NoError(t, err)
