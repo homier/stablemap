@@ -22,12 +22,6 @@ func (sm *StableMap[K, V]) Get(key K) (V, bool) {
 	return sm.get(key)
 }
 
-// Puts a key in the map.
-// Returns whether a key is new and an error if compaction is required.
-func (sm *StableMap[K, V]) Put(key K, value V) (bool, error) {
-	return sm.put(key, value)
-}
-
 // Sets a key in the map.
 // If the key is already present, overwrites it.
 // Returns an error if compaction is required.

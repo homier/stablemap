@@ -48,15 +48,6 @@ if ok {
     fmt.Println("Found it: ", v)
 }
 
-// Put returns (isNew, error) - fails if key exists
-ok, err = sm.Put(43, "bar")
-if !ok {
-    fmt.Println("Can't put a value, key exists")
-}
-if errors.Is(err, stablemap.ErrTableFull) {
-    sm.Compact()
-}
-
 // Set overwrites existing values
 err = sm.Set(42, "bar")
 if errors.Is(err, stablemap.ErrTableFull) {
