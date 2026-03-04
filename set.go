@@ -30,7 +30,7 @@ func (ss *StableSet[K]) Has(key K) bool {
 }
 
 // Puts a key in the set.
-// Returns whether a key is new and an error if compaction is required.
+// Returns whether a key is new and an error if the table is full.
 func (ss *StableSet[K]) Put(key K) (bool, error) {
 	return ss.put(key, struct{}{})
 }

@@ -57,28 +57,27 @@ func TestStableMap_Stats(t *testing.T) {
 	assert.Equal(t, 5, stats.Size)
 }
 
-func TestStableMap_Compact(t *testing.T) {
-	sm := New[int, int](16)
+func TestStableMap_AutoCompaction(t *testing.T) {
+	sm := New[int, int](32)
+	effectiveCapacity := sm.Stats().EffectiveCapacity
+	threshold := effectiveCapacity / 3
 
-	for i := range 10 {
+	// Fill the table
+	for i := range effectiveCapacity {
 		_ = sm.Set(i, i*10)
 	}
 
-	for i := range 5 {
+	// Delete up to the compaction threshold — compaction triggers automatically
+	for i := range threshold {
 		sm.Delete(i)
 	}
 
 	stats := sm.Stats()
-	assert.Equal(t, 5, stats.Tombstones)
+	assert.Equal(t, 0, stats.Tombstones, "tombstones should be cleared after auto-compaction")
+	assert.Equal(t, effectiveCapacity-threshold, stats.Size)
 
-	sm.Compact()
-
-	stats = sm.Stats()
-	assert.Equal(t, 0, stats.Tombstones)
-	assert.Equal(t, 5, stats.Size)
-
-	// Verify remaining values
-	for i := 5; i < 10; i++ {
+	// Verify remaining values are intact
+	for i := threshold; i < effectiveCapacity; i++ {
 		v, ok := sm.Get(i)
 		require.True(t, ok)
 		assert.Equal(t, i*10, v)

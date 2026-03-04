@@ -15,7 +15,7 @@ It is designed with a **fixed-size memory model**. It does not grow automaticall
 
 ## Key features
 * **Zero allocation hot path**: after initial initialization, `Set`, `Put`, `Has` and `Delete` methods do not allocate additional memory.
-* **In-place rehash**: rehashing happens in-place to remove tombstones without additional allocations or doubling memory.
+* **Automatic compaction**: tombstones are cleaned up automatically during `Delete` operations when the threshold is reached, using in-place rehashing without additional allocations or doubling memory.
 * **Contiguous memory**: data stored in a single slice of groups.
 * **Custom hash function**: you can provide your own hash function instead of default `hash/maphash`.
 * **Set-like variant**: use `StableSet` for set-like datastructure instead of `StableMap`.
@@ -38,11 +38,11 @@ import "github.com/homier/stablemap"
 // Initialize with a capacity hint
 sm := stablemap.New[int, string](1024)
 
-// Add elements - Set returns error if compaction is needed
+// Add elements - Set returns error if the table is full
 err := sm.Set(42, "foo")
 if errors.Is(err, stablemap.ErrTableFull) {
-    sm.Compact()
-    sm.Set(42, "foo") // retry
+    // Table is genuinely full — no more room for new keys
+    log.Fatal("table is full")
 }
 
 // Get value
@@ -52,18 +52,14 @@ if ok {
 }
 
 // Set overwrites existing values
-err = sm.Set(42, "bar")
-if errors.Is(err, stablemap.ErrTableFull) {
-    sm.Compact()
-    sm.Set(42, "bar")
-}
+_ = sm.Set(42, "bar")
 
 v, ok = sm.Get(42)
 if ok {
     fmt.Println("Found it! Now it should be `bar`: ", v)
 }
 
-// Delete element
+// Delete element — compaction happens automatically when needed
 if sm.Delete(42) {
     fmt.Println("Deleted it")
 }
@@ -84,8 +80,7 @@ ss := stablemap.NewSet[int](1024)
 // Add elements - Put returns (isNew, error)
 ok, err := ss.Put(42)
 if errors.Is(err, stablemap.ErrTableFull) {
-    ss.Compact()
-    ss.Put(42) // retry
+    log.Fatal("table is full")
 }
 
 // Check existence
@@ -93,7 +88,7 @@ if ss.Has(42) {
     fmt.Println("Found it!")
 }
 
-// Remove elements
+// Remove elements — compaction happens automatically when needed
 if ss.Delete(42) {
     fmt.Println("Deleted it")
 }
@@ -115,27 +110,20 @@ sm := stablemap.New[int, string](1024, stablemap.WithCompactionThresholdFactor[i
 ```
 
 ### Stats and Compaction
-Both `StableMap` and `StableSet` provide a `Stats()` method for monitoring table health and a `NeedsCompaction()` method to check if compaction is recommended:
+Both `StableMap` and `StableSet` provide a `Stats()` method for monitoring table health. Compaction runs automatically during `Delete` when tombstones reach the threshold (1/3 of effective capacity by default, configurable via `WithCompactionThresholdFactor`):
 ```go
 stats := sm.Stats()
 fmt.Printf("Size: %d\n", stats.Size)
 fmt.Printf("Tombstones: %d\n", stats.Tombstones)
 fmt.Printf("Tombstones/Capacity: %.2f\n", stats.TombstonesCapacityRatio)
 fmt.Printf("Tombstones/Size: %.2f\n", stats.TombstonesSizeRatio)
-
-// Use NeedsCompaction() to decide when to compact
-// Returns true when tombstones reach 1/3 of effective capacity (default)
-// The threshold factor can be configured via WithCompactionThresholdFactor
-if sm.NeedsCompaction() {
-    sm.Compact()
-}
 ```
 
 ## When to use StableMap
 Use Go map first. But, while the standard Go map is the right choice for most cases, StableMap excels when:
 1. You are handling large datasets (GBs of data) where GC scan times for standard maps become a bottleneck.
 2. You need predictable memory usage and want to avoid the "latency spikes" caused by map growth/evacuation.
-3. You have a high-churn workload (constant Puts/Deletes) and want to manage tombstone cleanup manually via Rehash().
+3. You have a high-churn workload (constant Puts/Deletes) with automatic tombstone cleanup.
 
 ## TODO list
 1. Expand unit tests for edge cases (maximum capacity, hash collisions, rehashing).

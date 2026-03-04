@@ -174,7 +174,7 @@ func TestTable_Compact(t *testing.T) {
 	}
 
 	// 3. Compact
-	tt.Compact()
+	tt.compact()
 
 	// 4. Verify the one remaining element
 	lastIdx := capacity - 1
@@ -212,7 +212,7 @@ func TestTable_Compact_Sync(t *testing.T) {
 	}
 
 	// 3. Compact in-place
-	tt.Compact()
+	tt.compact()
 
 	// 4. Verify remaining keys still have their correct values
 	for idx := range 10 {
@@ -295,7 +295,7 @@ func TestTable_Stats(t *testing.T) {
 	assert.Equal(t, float32(5)/float32(5), stats.TombstonesSizeRatio)
 
 	// 4. After compaction - tombstones should be cleared
-	tt.Compact()
+	tt.compact()
 
 	stats = tt.Stats()
 	assert.Equal(t, 5, stats.Size)
@@ -306,55 +306,38 @@ func TestTable_Stats(t *testing.T) {
 
 func TestTable_NeedsCompaction(t *testing.T) {
 	tt := newTable[int, int](32)
-	effectiveCapacity := tt.Stats().EffectiveCapacity
-	threshold := effectiveCapacity / 3
+	threshold := tt.tombstoneCompactionThreshold
 
 	// 1. Empty table - no compaction needed
-	assert.False(t, tt.NeedsCompaction())
+	assert.False(t, tt.needsCompaction())
 
-	// 2. Fill the table
-	for i := range effectiveCapacity {
-		ok, err := tt.put(i, i)
-		require.True(t, ok)
-		require.NoError(t, err)
-	}
-	assert.False(t, tt.NeedsCompaction())
+	// 2. Just below threshold
+	tt.tombstones = threshold - 1
+	assert.False(t, tt.needsCompaction(), "should not need compaction below threshold")
 
-	// 3. Delete items just below the threshold
-	for i := range threshold - 1 {
-		require.True(t, tt.delete(i))
-	}
-	assert.False(t, tt.NeedsCompaction(), "should not need compaction below threshold")
+	// 3. At threshold
+	tt.tombstones = threshold
+	assert.True(t, tt.needsCompaction(), "should need compaction at threshold")
 
-	// 4. Delete one more to reach the threshold
-	require.True(t, tt.delete(threshold-1))
-	assert.True(t, tt.NeedsCompaction(), "should need compaction at threshold")
+	// 4. Above threshold
+	tt.tombstones = threshold + 1
+	assert.True(t, tt.needsCompaction(), "should need compaction above threshold")
 
-	// 5. After compaction - no longer needs compaction
-	tt.Compact()
-	assert.False(t, tt.NeedsCompaction(), "should not need compaction after Compact()")
+	// 5. Reset
+	tt.tombstones = 0
+	assert.False(t, tt.needsCompaction(), "should not need compaction after reset")
 }
 
 func TestTable_NeedsCompaction_CustomFactor(t *testing.T) {
-	// Use factor of 2 instead of default 3
 	tt := newTable(32, WithCompactionThresholdFactor[int, int](2))
-	effectiveCapacity := tt.Stats().EffectiveCapacity
-	threshold := effectiveCapacity / 2
+	threshold := tt.tombstoneCompactionThreshold
 
-	// Fill the table
-	for i := range effectiveCapacity {
-		ok, err := tt.put(i, i)
-		require.True(t, ok)
-		require.NoError(t, err)
-	}
+	// Verify custom threshold: effectiveCapacity / 2
+	assert.Equal(t, tt.capacityEffective/2, threshold)
 
-	// Delete items just below the threshold
-	for i := range threshold - 1 {
-		require.True(t, tt.delete(i))
-	}
-	assert.False(t, tt.NeedsCompaction(), "should not need compaction below custom threshold")
+	tt.tombstones = threshold - 1
+	assert.False(t, tt.needsCompaction(), "should not need compaction below custom threshold")
 
-	// Delete one more to reach the threshold
-	require.True(t, tt.delete(threshold-1))
-	assert.True(t, tt.NeedsCompaction(), "should need compaction at custom threshold")
+	tt.tombstones = threshold
+	assert.True(t, tt.needsCompaction(), "should need compaction at custom threshold")
 }

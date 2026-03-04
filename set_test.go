@@ -54,28 +54,27 @@ func TestStableSet_Stats(t *testing.T) {
 	assert.Equal(t, 5, stats.Size)
 }
 
-func TestStableSet_Compact(t *testing.T) {
-	ss := NewSet[int](16)
+func TestStableSet_AutoCompaction(t *testing.T) {
+	ss := NewSet[int](32)
+	effectiveCapacity := ss.Stats().EffectiveCapacity
+	threshold := effectiveCapacity / 3
 
-	for i := range 10 {
+	// Fill the table
+	for i := range effectiveCapacity {
 		_, _ = ss.Put(i)
 	}
 
-	for i := range 5 {
+	// Delete up to the compaction threshold — compaction triggers automatically
+	for i := range threshold {
 		ss.Delete(i)
 	}
 
 	stats := ss.Stats()
-	assert.Equal(t, 5, stats.Tombstones)
+	assert.Equal(t, 0, stats.Tombstones, "tombstones should be cleared after auto-compaction")
+	assert.Equal(t, effectiveCapacity-threshold, stats.Size)
 
-	ss.Compact()
-
-	stats = ss.Stats()
-	assert.Equal(t, 0, stats.Tombstones)
-	assert.Equal(t, 5, stats.Size)
-
-	// Verify remaining keys
-	for i := 5; i < 10; i++ {
+	// Verify remaining keys are intact
+	for i := threshold; i < effectiveCapacity; i++ {
 		assert.True(t, ss.Has(i))
 	}
 }

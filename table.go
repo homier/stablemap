@@ -6,7 +6,7 @@ import (
 	"unsafe"
 )
 
-var ErrTableFull = errors.New("table is full, compaction required")
+var ErrTableFull = errors.New("table is full")
 
 type Stats struct {
 	Size                    int
@@ -119,11 +119,11 @@ func (t *table[K, V]) Stats() Stats {
 	}
 }
 
-// NeedsCompaction returns true if the table has accumulated enough tombstones
+// needsCompaction returns true if the table has accumulated enough tombstones
 // to warrant compaction. The threshold is when tombstones reach at least
 // effectiveCapacity/factor, where factor defaults to 3 and can be configured
 // via WithCompactionThresholdFactor.
-func (t *table[K, V]) NeedsCompaction() bool {
+func (t *table[K, V]) needsCompaction() bool {
 	return t.tombstones >= t.tombstoneCompactionThreshold
 }
 
@@ -311,6 +311,10 @@ func (t *table[K, V]) delete(key K) bool {
 				t.size--
 				t.tombstones++
 
+				if t.needsCompaction() {
+					t.compact()
+				}
+
 				return true
 			}
 
@@ -336,7 +340,7 @@ func (t *table[K, V]) Reset() {
 	t.tombstones = 0
 }
 
-func (t *table[K, V]) Compact() {
+func (t *table[K, V]) compact() {
 	// We want to drop all of the deletes in place. We first walk over the
 	// control bytes and mark every DELETED slot as EMPTY and every FULL slot
 	// as DELETED. Marking the DELETED slots as EMPTY has effectively dropped

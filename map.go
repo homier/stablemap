@@ -27,7 +27,7 @@ func (sm *StableMap[K, V]) Get(key K) (V, bool) {
 
 // Sets a key in the map.
 // If the key is already present, overwrites it.
-// Returns an error if compaction is required.
+// Returns an error if the table is full.
 func (sm *StableMap[K, V]) Set(key K, value V) error {
 	return sm.set(key, value)
 }
