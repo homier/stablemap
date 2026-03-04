@@ -15,27 +15,25 @@ func setupBenchData(n int) []uint64 {
 	return data
 }
 
-func BenchmarkStableSet_Contains(b *testing.B) {
+func BenchmarkStableMap_Get(b *testing.B) {
 	const capacity = 8192
 	keys := setupBenchData(capacity / 2)
-	ss := NewSet[uint64](capacity)
+	sm := New[uint64, uint64](capacity)
 	for _, k := range keys {
-		_, _ = ss.Put(k)
+		_ = sm.Set(k, k)
 	}
 
 	for i := 0; b.Loop(); i++ {
-		// We use bitwise AND to stay within the slice range
-		// and test both hits and misses
-		ss.Has(uint64(i))
+		sm.Get(uint64(i))
 	}
 }
 
-func BenchmarkStdMap_Contains(b *testing.B) {
+func BenchmarkStdMap_Get(b *testing.B) {
 	const capacity = 8192
 	keys := setupBenchData(capacity / 2)
-	m := make(map[uint64]struct{}, capacity)
+	m := make(map[uint64]uint64, capacity)
 	for _, k := range keys {
-		m[k] = struct{}{}
+		m[k] = k
 	}
 
 	for i := 0; b.Loop(); i++ {
@@ -43,58 +41,56 @@ func BenchmarkStdMap_Contains(b *testing.B) {
 	}
 }
 
-func BenchmarkStableSet_Put(b *testing.B) {
+func BenchmarkStableMap_Set(b *testing.B) {
 	const capacity = 8192
 	keys := setupBenchData(capacity)
-	ss := NewSet[uint64](capacity)
+	sm := New[uint64, uint64](capacity)
 
 	for i := 0; b.Loop(); i++ {
-		// Reset when nearly full to measure steady-state Put
-		if ss.size >= ss.capacityEffective {
+		// Reset when nearly full to measure steady-state Set
+		if sm.size >= sm.capacityEffective {
 			b.StopTimer()
-			ss.Reset()
+			sm.Reset()
 			b.StartTimer()
 		}
-		_, _ = ss.Put(keys[i%len(keys)])
+		_ = sm.Set(keys[i%len(keys)], keys[i%len(keys)])
 	}
 }
 
-func BenchmarkStdMap_Put(b *testing.B) {
+func BenchmarkStdMap_Set(b *testing.B) {
 	const capacity = 8192
 	keys := setupBenchData(capacity)
-	// We initialize with capacity to prevent resizing during the benchmark
-	m := make(map[uint64]struct{}, capacity)
+	m := make(map[uint64]uint64, capacity)
 
 	for i := 0; b.Loop(); i++ {
 		if len(m) >= capacity*7/8 {
 			b.StopTimer()
-			// Clearing a map is O(N). We do this to stay in a steady state.
 			for k := range m {
 				delete(m, k)
 			}
 			b.StartTimer()
 		}
-		m[keys[i%len(keys)]] = struct{}{}
+		m[keys[i%len(keys)]] = keys[i%len(keys)]
 	}
 }
 
-func BenchmarkStableSet_Delete(b *testing.B) {
+func BenchmarkStableMap_Delete(b *testing.B) {
 	const size = 1000
-	ss := NewSet[int](size)
+	sm := New[int, int](size)
 	for i := range size {
-		_, _ = ss.Put(i)
+		_ = sm.Set(i, i)
 	}
 
 	for i := 0; b.Loop(); i++ {
-		ss.Delete(i % size)
+		sm.Delete(i % size)
 	}
 }
 
 func BenchmarkStdMap_Delete(b *testing.B) {
 	const size = 1000
-	m := make(map[int]struct{}, size)
+	m := make(map[int]int, size)
 	for i := range size {
-		m[i] = struct{}{}
+		m[i] = i
 	}
 
 	for i := 0; b.Loop(); i++ {
@@ -102,23 +98,23 @@ func BenchmarkStdMap_Delete(b *testing.B) {
 	}
 }
 
-func BenchmarkLargeScale_StableSet_Delete(b *testing.B) {
+func BenchmarkLargeScale_StableMap_Delete(b *testing.B) {
 	const capacity = 1 << 20
-	ss := NewSet[int](capacity)
+	sm := New[int, int](capacity)
 	for i := range capacity / 2 {
-		_, _ = ss.Put(i)
+		_ = sm.Set(i, i)
 	}
 
 	for i := 0; b.Loop(); i++ {
-		ss.Delete(i % (capacity / 2))
+		sm.Delete(i % (capacity / 2))
 	}
 }
 
 func BenchmarkLargeScale_StdMap_Delete(b *testing.B) {
 	const capacity = 1 << 20
-	m := make(map[int]struct{}, capacity)
+	m := make(map[int]int, capacity)
 	for i := range capacity / 2 {
-		m[i] = struct{}{}
+		m[i] = i
 	}
 
 	for i := 0; b.Loop(); i++ {
@@ -126,22 +122,20 @@ func BenchmarkLargeScale_StdMap_Delete(b *testing.B) {
 	}
 }
 
-func BenchmarkLargeScale_StableSet(b *testing.B) {
+func BenchmarkLargeScale_StableMap(b *testing.B) {
 	const capacity = 4194304 // 2^22
-	// Pre-generate keys to avoid hashing/gen time in the loop
 	keys := make([]uint64, capacity/2)
 	for i := range keys {
-		keys[i] = uint64(i * 9876543210123) // High entropy distribution
+		keys[i] = uint64(i * 9876543210123)
 	}
 
-	ss := NewSet[uint64](capacity)
+	sm := New[uint64, uint64](capacity)
 	for _, k := range keys {
-		_, _ = ss.Put(k)
+		_ = sm.Set(k, k)
 	}
 
 	for i := 0; b.Loop(); i++ {
-		// Use a large prime to jump around the set and force cache misses
-		_ = ss.Has(keys[(uintptr(i)*1337)%(capacity/2)])
+		sm.Get(keys[(uintptr(i)*1337)%(capacity/2)])
 	}
 }
 
@@ -152,9 +146,9 @@ func BenchmarkLargeScale_StdMap(b *testing.B) {
 		keys[i] = uint64(i * 9876543210123)
 	}
 
-	m := make(map[uint64]struct{}, capacity)
+	m := make(map[uint64]uint64, capacity)
 	for _, k := range keys {
-		m[k] = struct{}{}
+		m[k] = k
 	}
 
 	for i := 0; b.Loop(); i++ {
@@ -162,9 +156,8 @@ func BenchmarkLargeScale_StdMap(b *testing.B) {
 	}
 }
 
-func BenchmarkLargeScale_StableSet_HighLoad(b *testing.B) {
+func BenchmarkLargeScale_StableMap_HighLoad(b *testing.B) {
 	const capacity = 4194304
-	// 0.875 is 7/8 load—the theoretical limit for many Swiss Tables
 	const loadFactor = 0.875
 	fillCount := int(float64(capacity) * loadFactor)
 
@@ -173,20 +166,18 @@ func BenchmarkLargeScale_StableSet_HighLoad(b *testing.B) {
 		keys[i] = uint64(i * 9876543210123)
 	}
 
-	ss := NewSet[uint64](capacity)
+	sm := New[uint64, uint64](capacity)
 	for _, k := range keys {
-		_, _ = ss.Put(k)
+		_ = sm.Set(k, k)
 	}
 
 	for i := 0; b.Loop(); i++ {
-		// Use a subset of the keys to ensure we are hitting existing values
-		_ = ss.Has(keys[i%len(keys)])
+		sm.Get(keys[i%len(keys)])
 	}
 }
 
 func BenchmarkLargeScale_StdMap_HighLoad(b *testing.B) {
 	const capacity = 4194304
-	// 0.875 is 7/8 load—the theoretical limit for many Swiss Tables
 	const loadFactor = 0.875
 	fillCount := int(float64(capacity) * loadFactor)
 
@@ -195,9 +186,9 @@ func BenchmarkLargeScale_StdMap_HighLoad(b *testing.B) {
 		keys[i] = uint64(i * 9876543210123)
 	}
 
-	m := make(map[uint64]struct{}, capacity)
+	m := make(map[uint64]uint64, capacity)
 	for _, k := range keys {
-		m[k] = struct{}{}
+		m[k] = k
 	}
 
 	for i := 0; b.Loop(); i++ {
@@ -205,22 +196,22 @@ func BenchmarkLargeScale_StdMap_HighLoad(b *testing.B) {
 	}
 }
 
-func BenchmarkMemoryUsage_StableSet(b *testing.B) {
+func BenchmarkMemoryUsage_StableMap(b *testing.B) {
 	var m1, m2 runtime.MemStats
 
-	g := group[uint64, struct{}]{}
+	g := group[uint64, uint64]{}
 	for idx := range groupSize {
 		g.ctrls[idx] = 0x7b
 		g.slots[idx] = uint64(idx)
 	}
 
-	b.Logf("size of table: %v B\n", unsafe.Sizeof(g))
+	b.Logf("size of group: %v B\n", unsafe.Sizeof(g))
 
 	runtime.GC()
 	runtime.ReadMemStats(&m1)
 
-	ss := NewSet[uint64](16777216)
-	_ = ss
+	sm := New[uint64, uint64](16777216)
+	_ = sm
 
 	runtime.ReadMemStats(&m2)
 	b.Logf("Actual Memory: %v MB\n", (m2.Alloc-m1.Alloc)/1024/1024)
@@ -231,8 +222,8 @@ func BenchmarkMemoryUsage_StdMap(b *testing.B) {
 	runtime.GC()
 	runtime.ReadMemStats(&m1)
 
-	ss := make(map[uint64]struct{}, 16777216)
-	_ = ss
+	m := make(map[uint64]uint64, 16777216)
+	_ = m
 
 	runtime.ReadMemStats(&m2)
 	b.Logf("Actual Memory: %v MB\n", (m2.Alloc-m1.Alloc)/1024/1024)

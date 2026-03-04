@@ -43,34 +43,7 @@ func TestTable_Stats_Capacity(t *testing.T) {
 	require.Equal(t, 4096*7/8, tt.Stats().EffectiveCapacity)
 }
 
-func TestTable_put(t *testing.T) {
-	tt := newTable[string, string](4096)
-
-	ok, err := tt.put("foo", "bar")
-	require.True(t, ok)
-	assert.NoError(t, err)
-
-	ok, err = tt.put("foo", "bar2")
-	require.False(t, ok)
-	assert.NoError(t, err)
-}
-
-func TestTable_put_Fill(t *testing.T) {
-	tt := newTable[uint64, uint64](4096)
-	capacity := tt.Stats().EffectiveCapacity
-
-	for i := range uint64(capacity) {
-		ok, err := tt.put(i, i)
-		require.True(t, ok)
-		require.NoError(t, err)
-	}
-
-	ok, err := tt.put(uint64(capacity)+1, uint64(capacity)+1)
-	require.False(t, ok)
-	require.ErrorIs(t, err, ErrTableFull)
-}
-
-func TestTable_put_Tombstones(t *testing.T) {
+func TestTable_set_Tombstones(t *testing.T) {
 	// Use a custom hash function that forces collisions
 	// by returning the same h1 for everything.
 	collisionHash := func(k string) uint64 {
@@ -79,17 +52,9 @@ func TestTable_put_Tombstones(t *testing.T) {
 
 	tt := newTable(16, WithHashFunc[string, string](collisionHash))
 
-	ok, err := tt.put("A", "foo") // Slot 0
-	require.True(t, ok)
-	require.NoError(t, err)
-
-	ok, err = tt.put("B", "bar") // Slot 1 (via probe)
-	require.True(t, ok)
-	require.NoError(t, err)
-
-	ok, err = tt.put("C", "lol") // Slot 2 (via probe)
-	require.True(t, ok)
-	require.NoError(t, err)
+	require.NoError(t, tt.set("A", "foo")) // Slot 0
+	require.NoError(t, tt.set("B", "bar")) // Slot 1 (via probe)
+	require.NoError(t, tt.set("C", "lol")) // Slot 2 (via probe)
 
 	// Delete the "bridge" element
 	require.True(t, tt.delete("B"))
@@ -104,14 +69,17 @@ func TestTable_set(t *testing.T) {
 	tt := newTable[string, string](16)
 
 	err := tt.set("foo", "foo")
-	assert.NoError(t, err)
+	require.NoError(t, err)
+	assert.Equal(t, 1, tt.Stats().Size)
 
 	v, ok := tt.get("foo")
 	require.True(t, ok)
 	require.Equal(t, "foo", v)
 
+	// Setting the same key again should not increase size
 	err = tt.set("foo", "bar")
-	assert.NoError(t, err)
+	require.NoError(t, err)
+	assert.Equal(t, 1, tt.Stats().Size)
 
 	v, ok = tt.get("foo")
 	require.True(t, ok)
@@ -163,8 +131,7 @@ func TestTable_Compact(t *testing.T) {
 
 	// 1. Fill it up to the effective capacity
 	for i := range capacity {
-		ok, err := tt.put(i, i)
-		require.True(t, ok)
+		err := tt.set(i, i)
 		require.NoError(t, err)
 	}
 
@@ -195,8 +162,7 @@ func TestTable_Compact_Sync(t *testing.T) {
 
 	// 1. Fill it up to trigger many tombstones
 	for i := range 10 {
-		ok, err := tt.put(i, i*100)
-		require.True(t, ok)
+		err := tt.set(i, i*100)
 		require.NoError(t, err)
 	}
 
@@ -233,11 +199,11 @@ func TestTable_Compact_Sync(t *testing.T) {
 	}
 }
 
-func TestTable_put_BoundaryMirror(t *testing.T) {
+func TestTable_set_BoundaryMirror(t *testing.T) {
 	// 16 slots / 8 per group = 2 groups
 	tt := newTable[int, int](16)
 
-	// The last valid group index is ss.numGroupsMask (which is 1)
+	// The last valid group index is tt.numGroupsMask (which is 1)
 	targetGroupIdx := tt.numGroupsMask
 
 	lastIdxKey := 0
@@ -250,8 +216,7 @@ func TestTable_put_BoundaryMirror(t *testing.T) {
 		lastIdxKey++
 	}
 
-	ok, err := tt.put(lastIdxKey, lastIdxKey)
-	require.True(t, ok)
+	err := tt.set(lastIdxKey, lastIdxKey)
 	require.NoError(t, err)
 
 	v, ok := tt.get(lastIdxKey)
@@ -272,8 +237,7 @@ func TestTable_Stats(t *testing.T) {
 
 	// 2. Table with some items
 	for i := range 10 {
-		ok, err := tt.put(i, i)
-		require.True(t, ok)
+		err := tt.set(i, i)
 		require.NoError(t, err)
 	}
 
